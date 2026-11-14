@@ -11,6 +11,7 @@ export type ApiErrorCode =
   | "AI_TOOL_CALL_INVALID"
   | "CLARIFICATION_LIMIT_REACHED"
   | "DECOMPOSITION_CONFLICT"
+  | "TASK_READINESS_CONFLICT"
   | "INTERNAL_ERROR";
 
 export class ApiError extends Error {

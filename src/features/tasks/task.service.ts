@@ -1,6 +1,12 @@
 import type { Prisma, PrismaClient, Task } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/prisma";
+import type {
+  ReadinessTaskContext,
+  RelatedTaskContext,
+  TaskInspectionContext,
+} from "@/features/task-readiness/task-readiness.provider";
+import type { ReadinessConfirmationRequest } from "@/features/task-readiness/task-readiness.schemas";
 
 import type {
   CreateTaskInput,
@@ -26,6 +32,54 @@ const priorityRank = {
   MEDIUM: 2,
   HIGH: 3,
 } as const;
+
+const MAX_RELATED_TASK_CANDIDATES = 50;
+const MAX_RELATED_SEARCH_TERMS = 8;
+const MAX_RELATED_TASK_RESULTS = 10;
+
+function toReadinessTaskContext(task: Task): ReadinessTaskContext {
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    priority: task.priority,
+    parentTaskId: task.parentTaskId,
+  };
+}
+
+function getRelatedSearchTerms(query: string): string[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const tokens = normalizedQuery
+    .split(/\s+/u)
+    .filter((token) => token.length > 1);
+
+  return [...new Set([normalizedQuery, ...tokens])].slice(
+    0,
+    MAX_RELATED_SEARCH_TERMS,
+  );
+}
+
+function scoreRelatedTask(task: Task, query: string): number {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const title = task.title.toLocaleLowerCase();
+  const description = task.description.toLocaleLowerCase();
+  const tokens = normalizedQuery
+    .split(/\s+/u)
+    .filter((token) => token.length > 1);
+  let score = 0;
+
+  if (title === normalizedQuery) score += 100;
+  if (title.includes(normalizedQuery)) score += 40;
+  if (description.includes(normalizedQuery)) score += 20;
+
+  for (const token of tokens) {
+    if (title.includes(token)) score += 5;
+    if (description.includes(token)) score += 2;
+  }
+
+  return score;
+}
 
 function compareTasks(
   left: Task,
@@ -116,6 +170,111 @@ export class TaskService {
   async listSubtasks(parentTaskId: string): Promise<Task[]> {
     return this.db.task.findMany({
       where: { parentTaskId },
+    });
+  }
+
+  async getReadinessContext(taskId: string): Promise<TaskInspectionContext> {
+    const task = await this.db.task.findUnique({
+      where: { id: taskId },
+      include: { subtasks: true, parentTask: true },
+    });
+
+    if (task === null) {
+      throw new ApiError(404, "TASK_NOT_FOUND", "Task not found");
+    }
+
+    return {
+      task: toReadinessTaskContext(task),
+      subtasks: task.subtasks.map(toReadinessTaskContext),
+      parentTask:
+        task.parentTask === null
+          ? null
+          : toReadinessTaskContext(task.parentTask),
+    };
+  }
+
+  async findRelatedTasks(
+    selectedTaskId: string,
+    query: string,
+    limit: number,
+  ): Promise<RelatedTaskContext[]> {
+    const searchTerms = getRelatedSearchTerms(query);
+
+    if (searchTerms.length === 0 || searchTerms[0].length === 0) {
+      return [];
+    }
+
+    const boundedLimit = Math.min(
+      Math.max(Math.trunc(limit), 1),
+      MAX_RELATED_TASK_RESULTS,
+    );
+    const candidates = await this.db.task.findMany({
+      where: {
+        id: { not: selectedTaskId },
+        OR: searchTerms.flatMap((term) => [
+          { title: { contains: term } },
+          { description: { contains: term } },
+        ]),
+      },
+      take: MAX_RELATED_TASK_CANDIDATES,
+    });
+
+    return candidates
+      .map((task) => ({ task, score: scoreRelatedTask(task, query) }))
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          right.task.updatedAt.getTime() - left.task.updatedAt.getTime() ||
+          left.task.id.localeCompare(right.task.id),
+      )
+      .slice(0, boundedLimit)
+      .map(({ task }) => toReadinessTaskContext(task));
+  }
+
+  async confirmReadinessRewrite(
+    taskId: string,
+    input: ReadinessConfirmationRequest,
+  ): Promise<TaskWithSubtasks> {
+    return this.db.$transaction(async (transaction) => {
+      const result = await transaction.task.updateMany({
+        where: {
+          id: taskId,
+          title: input.original.title,
+          description: input.original.description,
+        },
+        data: {
+          title: input.rewrite.title,
+          description: input.rewrite.description,
+        },
+      });
+
+      if (result.count === 0) {
+        const currentTask = await transaction.task.findUnique({
+          where: { id: taskId },
+          select: { id: true },
+        });
+
+        if (currentTask === null) {
+          throw new ApiError(404, "TASK_NOT_FOUND", "Task not found");
+        }
+
+        throw new ApiError(
+          409,
+          "TASK_READINESS_CONFLICT",
+          "Task title or description changed after readiness analysis",
+        );
+      }
+
+      const updatedTask = await transaction.task.findUnique({
+        where: { id: taskId },
+        include: { subtasks: true },
+      });
+
+      if (updatedTask === null) {
+        throw new ApiError(404, "TASK_NOT_FOUND", "Task not found");
+      }
+
+      return updatedTask;
     });
   }
 
