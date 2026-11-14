@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build DevLog"
+  short_description: "Build DevLog in small approved steps"
+  default_prompt: "Use $build-devlog to complete one approved DevLog step and verify it."

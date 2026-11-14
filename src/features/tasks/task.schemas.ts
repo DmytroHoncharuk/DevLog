@@ -35,3 +35,37 @@ export const listTasksQuerySchema = z
 export const taskIdSchema = z.string().trim().min(1);
 
 export type ListTasksQuery = z.infer<typeof listTasksQuerySchema>;
+
+export const taskResponseSchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    status: z.enum(["TODO", "IN_PROGRESS", "DONE"]),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    parentTaskId: z.string().nullable(),
+  })
+  .strict();
+
+export const taskWithSubtasksResponseSchema = taskResponseSchema.extend({
+  subtasks: z.array(taskResponseSchema),
+});
+
+export const taskListResponseSchema = z
+  .object({
+    data: z.array(taskWithSubtasksResponseSchema),
+    meta: z
+      .object({
+        total: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type TaskResponse = z.infer<typeof taskResponseSchema>;
+export type TaskWithSubtasksResponse = z.infer<
+  typeof taskWithSubtasksResponseSchema
+>;
+export type TaskListResponse = z.infer<typeof taskListResponseSchema>;
