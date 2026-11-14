@@ -6,9 +6,9 @@ This file records confirmed decisions, open decisions, and delivery-stage status
 
 | Stage | Status |
 | --- | --- |
-| 1. Foundation and backend CRUD | `in-progress` |
-| 2. Frontend CRUD | `in-progress` |
-| 3. AI functions | `not-started` |
+| 1. Foundation and backend CRUD | `done` |
+| 2. Frontend CRUD | `done` |
+| 3. AI functions | `in-progress` |
 | 4. Verification and submission | `not-started` |
 
 Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
@@ -74,9 +74,14 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 
 ## Confirmed AI direction
 
-- Agent B, task decomposition, is the first confirmed AI capability.
-- Show generated subtasks as a preview and persist them only after explicit user confirmation.
-- Keep the LLM integration behind a provider-neutral boundary.
+- Agent B, root-task decomposition, is the first confirmed AI capability. Its full contract is in `docs/agent-b-contract.md` and must be read before planning or implementation.
+- Agent B cannot decompose a subtask. It returns either an editable two-to-seven-item preview or a successful `needs_clarification` result when completing the decomposition would require invented scope.
+- Existing subtasks are read-only generation context; Agent B proposes only new, non-duplicate items.
+- Agent B uses a bounded provider-neutral tool loop with two model turns and one read-only `get_existing_subtasks` call. The model selects whether the tool is needed; initial context contains only the current subtask count.
+- Clarification history remains in frontend state, is strictly validated as untrusted input, is limited to two rounds, and is never allowed to replace the database task or agent instructions. Refreshing or closing the page loses the history in the MVP.
+- Preview is client-held and never persisted. Confirmation revalidates one to seven edited items, detects conflicts against current data, and creates every item atomically or none.
+- Use a provider-neutral `TaskDecompositionProvider` boundary with one OpenAI adapter initially. Provider SDK types, raw payloads, and secrets must not escape the adapter.
+- OpenAI is the confirmed first provider; the concrete model remains an open decision and must be supplied through server-only environment configuration.
 - A real LLM API must be exercised before agent B is considered complete; a mock-only implementation is insufficient.
 - Do not choose or implement the second required agent without explicit user approval.
 
@@ -89,7 +94,6 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 
 ## Open decisions
 
-- Agent B behavior when the source task lacks enough detail.
-- LLM provider and model.
+- Concrete OpenAI model for Agent B.
 - The second required AI agent.
 - Whether and when to add the optional seed.

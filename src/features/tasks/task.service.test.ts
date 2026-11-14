@@ -28,6 +28,7 @@ function createDatabaseMock() {
   return {
     task: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn().mockResolvedValue(createdTask),
     },
   } as unknown as PrismaClient;
@@ -90,6 +91,38 @@ describe("TaskService.create", () => {
     ).rejects.toMatchObject({
       status: 409,
       code: "INVALID_TASK_HIERARCHY",
+    });
+  });
+});
+
+describe("TaskService Agent B reads", () => {
+  it("loads the source task with only a subtask count", async () => {
+    const database = createDatabaseMock();
+    vi.mocked(database.task.findUnique).mockResolvedValue({
+      ...taskRecord,
+      _count: { subtasks: 2 },
+    } as never);
+    const service = new TaskService(database);
+
+    await expect(service.getDecompositionSource(taskRecord.id)).resolves.toEqual({
+      ...taskRecord,
+      existingSubtaskCount: 2,
+    });
+    expect(database.task.findUnique).toHaveBeenCalledWith({
+      where: { id: taskRecord.id },
+      include: { _count: { select: { subtasks: true } } },
+    });
+    expect(database.task.findMany).not.toHaveBeenCalled();
+  });
+
+  it("loads subtask details through the separate read-only query", async () => {
+    const database = createDatabaseMock();
+    vi.mocked(database.task.findMany).mockResolvedValue([taskRecord]);
+    const service = new TaskService(database);
+
+    await expect(service.listSubtasks("root-id")).resolves.toEqual([taskRecord]);
+    expect(database.task.findMany).toHaveBeenCalledWith({
+      where: { parentTaskId: "root-id" },
     });
   });
 });

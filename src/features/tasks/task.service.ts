@@ -12,6 +12,10 @@ export type TaskWithSubtasks = Task & {
   subtasks: Task[];
 };
 
+export type TaskDecompositionSource = Task & {
+  existingSubtaskCount: number;
+};
+
 const priorityRank = {
   LOW: 1,
   MEDIUM: 2,
@@ -82,6 +86,32 @@ export class TaskService {
     }
 
     return task;
+  }
+
+  async getDecompositionSource(
+    taskId: string,
+  ): Promise<TaskDecompositionSource> {
+    const task = await this.db.task.findUnique({
+      where: { id: taskId },
+      include: { _count: { select: { subtasks: true } } },
+    });
+
+    if (task === null) {
+      throw new ApiError(404, "TASK_NOT_FOUND", "Task not found");
+    }
+
+    const { _count, ...sourceTask } = task;
+
+    return {
+      ...sourceTask,
+      existingSubtaskCount: _count.subtasks,
+    };
+  }
+
+  async listSubtasks(parentTaskId: string): Promise<Task[]> {
+    return this.db.task.findMany({
+      where: { parentTaskId },
+    });
   }
 
   async create(input: CreateTaskInput): Promise<TaskWithSubtasks> {

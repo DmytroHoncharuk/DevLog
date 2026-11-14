@@ -11,6 +11,8 @@ Develop DevLog incrementally without silently expanding its scope.
 
 Before planning or changing DevLog, read [references/project-state.md](references/project-state.md). Treat confirmed decisions there as constraints and open decisions as unresolved.
 
+Before planning or implementing Agent B, also read [../../../docs/agent-b-contract.md](../../../docs/agent-b-contract.md) in full. It is the detailed source of truth for task decomposition, the provider-neutral boundary, preview and confirmation behavior, validation, UI states, and acceptance criteria. Do not duplicate or reinterpret that contract inside the skill.
+
 When the user explicitly confirms or changes a project decision, update only the corresponding entry in `project-state.md`. Do not record an assumption or recommendation as confirmed. Preserve prior decisions unless the user explicitly replaces them.
 
 ## Working agreement
@@ -49,8 +51,9 @@ Work through these stages in order unless the user explicitly changes the order.
    - Scaffold the UI with a coding agent and record the real workflow in `AGENT_LOG.md`.
 
 3. **AI functions**
-   - Implement agent B first: decomposition preview, validated structured output, and persistence only after confirmation.
+   - Implement Agent B first according to `docs/agent-b-contract.md`: root-only decomposition, validated structured preview, editable confirmation, and atomic persistence only after confirmation.
    - Integrate a real LLM behind a provider-neutral boundary.
+   - Use OpenAI for the first adapter, but keep the concrete model environment-configured and unresolved until the user approves it.
    - Do not choose or implement the required second agent until the user explicitly approves it.
 
 4. **Verification and submission**
