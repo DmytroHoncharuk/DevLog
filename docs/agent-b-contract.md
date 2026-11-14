@@ -16,7 +16,7 @@ Generating or editing a preview never changes the database. Subtasks are persist
 
 - Agent B operates only on root tasks. It must reject attempts to decompose a subtask.
 - The task hierarchy remains limited to one subtask level.
-- Existing subtasks are context for generation. Agent B generates only additional, non-duplicate subtasks and never replaces, edits, or deletes existing ones.
+- Existing subtasks are context and count as scope coverage regardless of status. Agent B generates only genuinely missing, non-duplicate subtasks and never replaces, edits, deletes, or recreates an existing subtask merely because it is incomplete.
 - Preview state is ephemeral and remains on the client; it is not stored in the database and has no preview ID or expiry record.
 - Clarification questions and answers are also ephemeral client state. Refreshing or closing the page loses them; the user must restart clarification from the current database task.
 - Agent B does not introduce an AI chat, authentication, background jobs, or a second AI agent.
@@ -45,7 +45,7 @@ Do not send internal IDs, timestamps, or unrelated persistence fields to the mod
 
 ## Sufficient-context rule
 
-The source task has sufficient context when Agent B can produce two to seven concrete, non-duplicate subtasks without inventing:
+The source task has sufficient context when Agent B can identify zero to seven concrete remaining subtasks without inventing:
 
 - additional product scope;
 - technologies or architecture;
@@ -53,7 +53,7 @@ The source task has sufficient context when Agent B can produce two to seven con
 - deadlines or assignees;
 - unstated business rules.
 
-Description length is not a proxy for clarity. When the context is insufficient, the model must not guess. It returns a concise reason and one to three focused clarification questions.
+Description length is not a proxy for clarity. When the context is insufficient, the model must not guess. It returns a concise reason and one to three focused clarification questions. When existing subtasks cover all work explicitly supported by the source task and clarification history, it returns `no_new_subtasks`; that outcome does not mean the parent task or existing subtasks are completed.
 
 ## Clarification state
 
@@ -85,16 +85,26 @@ type NeedsClarificationResult = {
   questions: string[];
 };
 
-type DecompositionResult = DecomposedResult | NeedsClarificationResult;
+type NoNewSubtasksResult = {
+  outcome: "no_new_subtasks";
+  reason: string;
+};
+
+type DecompositionResult =
+  | DecomposedResult
+  | NeedsClarificationResult
+  | NoNewSubtasksResult;
 ```
 
 Treat every provider response as untrusted. Parse and validate it with the application-owned Zod schema even when the provider claims to enforce structured output.
 
 ## Generated-subtask rules
 
-- The model generates two to seven subtasks.
+- The model generates only the genuinely missing work: one to seven subtasks, with no preferred or target count and no filler.
 - Every subtask has a concrete action and a verifiable result.
 - Every subtask remains inside the parent task's stated scope.
+- Existing subtasks cover their described responsibility regardless of status. The model must not recreate an incomplete existing subtask or propose renamed, narrower, broader, supporting, validation, testing, security, or error-handling work already materially covered.
+- Broad categories do not authorize conventional features. Capabilities such as password reset, logout, session lifecycle, multi-factor authentication, or external providers require explicit support from the source task or clarification history.
 - Generated titles must not duplicate one another or existing subtask titles after trim and case-insensitive normalization.
 - Titles follow the existing 1-120 character rule; descriptions follow the existing 1-2000 character rule.
 - The model does not choose `status` or `parentTaskId`. The server sets `status = TODO` and binds `parentTaskId` to the source root task.
@@ -151,9 +161,9 @@ Route Handler -> DecompositionService -> TaskDecompositionProvider
 
 `DecompositionService` owns business orchestration: reload the task, enforce root-only behavior, build neutral input, expose the scoped read-only tool, call the port, validate the unknown response, reload current subtasks for duplicate detection, and return a domain result.
 
-The OpenAI adapter runs a bounded Responses API loop. The model may return a final structured result immediately or select `get_existing_subtasks`. The application validates the empty strict argument object, executes the scoped callback, appends the flat `response.output` items followed by a correlated `function_call_output`, and makes the next model request. The adapter must not access Prisma, persist subtasks, know HTTP routes, decide domain eligibility, or expose OpenAI SDK types and raw payloads outside the adapter.
+The OpenAI adapter runs a bounded Responses API loop. When `existingSubtaskCount` is zero, the model may return a final structured result immediately. When the count is greater than zero, application policy forces `get_existing_subtasks` on the first turn before any final outcome; the second turn may return the final structured result. The application validates the empty strict argument object, executes the scoped callback, appends the flat `response.output` items followed by a correlated `function_call_output`, and makes the next model request. The adapter must not access Prisma, persist subtasks, know HTTP routes, decide domain eligibility, or expose OpenAI SDK types and raw payloads outside the adapter.
 
-`get_existing_subtasks` is never forced or automatically executed as an agent tool. Initial context contains only `existingSubtaskCount`; subtask details are loaded for the model only when it selects the tool. Duplicate detection remains a separate mandatory application check against current database state.
+Initial context contains only `existingSubtaskCount`. With no existing subtasks, no tool call is required. With one or more existing subtasks, the application requires the read-only tool so the model can evaluate remaining semantic scope; this invocation is policy-driven, not independently selected by the model. The service rejects a provider that returns a final result without performing the required read. Exact normalized-title duplicate detection remains a separate mandatory application check against current database state.
 
 The hard limits are:
 
@@ -204,7 +214,13 @@ An omitted or empty body means an empty history. The endpoint validates the task
 {
   "data": {
     "outcome": "decomposed",
-    "subtasks": []
+    "subtasks": [
+      {
+        "title": "Implement the remaining route",
+        "description": "Add the only route still required by the stated scope.",
+        "priority": "MEDIUM"
+      }
+    ]
   }
 }
 ```
@@ -221,7 +237,18 @@ or:
 }
 ```
 
-`needs_clarification` is a successful domain outcome and uses HTTP 200.
+or:
+
+```json
+{
+  "data": {
+    "outcome": "no_new_subtasks",
+    "reason": "Existing subtasks cover the explicitly stated scope."
+  }
+}
+```
+
+`needs_clarification` and `no_new_subtasks` are successful domain outcomes and use HTTP 200. A `no_new_subtasks` preview performs no database writes and does not enable confirmation.
 
 Preview responses also contain non-sensitive clarification counters:
 
@@ -254,15 +281,16 @@ POST /api/tasks/:taskId/decomposition-confirm
 
 Confirmation never calls the LLM. It revalidates the root task and the entire edited payload, reloads current subtasks, detects normalized-title conflicts, and creates all confirmed subtasks in one transaction. A conflict returns HTTP 409 with `DECOMPOSITION_CONFLICT`; no partial data may be written.
 
-The model must initially return two to seven items. After editing, the user may confirm one to seven valid, unique items.
+The model returns one to seven items only when genuinely missing work exists. After editing, the user may confirm one to seven valid, unique items.
 
 ## UI behavior
 
 - A `Decompose with AI` action appears on root-task cards only.
 - Disable duplicate generation while the preview request is pending.
 - Existing subtasks remain visible as read-only context in the preview dialog.
+- `no_new_subtasks` displays its explanation in a dedicated terminal dialog state, clarifies that task completion is not implied, and offers no `Create subtasks` action.
 - Generated items allow editing `title`, `description`, and `priority`, and allow removal.
-- The dialog offers `Cancel`, `Regenerate`, and `Create subtasks`.
+- An editable preview offers `Cancel`, `Regenerate`, and `Create subtasks`; the `no_new_subtasks` state offers only `Close`.
 - `Regenerate` warns that unsaved preview edits will be replaced and makes a new LLM request.
 - `Create subtasks` calls only the confirmation endpoint.
 
@@ -290,7 +318,8 @@ Provider errors must use the established safe error envelope and must not expose
 Add narrow tests for:
 
 - successful root-task decomposition and subtask rejection;
-- both valid structured outcomes;
+- all three valid structured outcomes, including a required explanation for `no_new_subtasks`;
+- a valid one-item decomposition and rejection of an empty `decomposed` result;
 - malformed, empty, oversized, and duplicate generated results;
 - duplicates against existing subtasks;
 - preview producing no database writes;
@@ -298,8 +327,10 @@ Add narrow tests for:
 - atomic confirmation and conflict rollback;
 - provider failures remaining safe;
 - replacement of the provider with a test double without importing the OpenAI SDK;
-- a clear task completing without a tool call;
-- a model-selected `get_existing_subtasks` call and a final response after its result;
+- a clear task with no existing subtasks completing without a tool call;
+- application-required `get_existing_subtasks` execution whenever the existing count is greater than zero, plus rejection of a provider that skips it;
+- existing subtasks counting as scope coverage regardless of status;
+- `no_new_subtasks` producing no database writes and no confirmation action;
 - correctly flattened `response.output` history in the second request;
 - clarification questions, resubmitted answers, and answer-dependent output;
 - invalid tool arguments being rejected before execution;

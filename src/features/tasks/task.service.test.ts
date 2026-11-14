@@ -126,3 +126,130 @@ describe("TaskService Agent B reads", () => {
     });
   });
 });
+
+const confirmedSubtasks = [
+  {
+    title: "Implement confirmation",
+    description: "Create every accepted subtask in one transaction.",
+    priority: "HIGH" as const,
+  },
+  {
+    title: "Verify confirmation",
+    description: "Cover conflicts and atomic failure behavior.",
+    priority: "MEDIUM" as const,
+  },
+];
+
+function createTransactionDatabaseMock(options?: {
+  sourceTask?: { id: string; parentTaskId: string | null } | null;
+  existingTitles?: string[];
+  createFailureAt?: number;
+}) {
+  const sourceTask = options?.sourceTask === undefined
+    ? { id: taskRecord.id, parentTaskId: null }
+    : options.sourceTask;
+  const transaction = {
+    task: {
+      findUnique: vi.fn().mockResolvedValue(sourceTask),
+      findMany: vi.fn().mockResolvedValue(
+        (options?.existingTitles ?? []).map((title) => ({ title })),
+      ),
+      create: vi.fn().mockImplementation(async ({ data }) => {
+        const callIndex = transaction.task.create.mock.calls.length;
+
+        if (options?.createFailureAt === callIndex) {
+          throw new Error("database write failed");
+        }
+
+        return {
+          ...taskRecord,
+          ...data,
+          id: `created-${callIndex}`,
+        };
+      }),
+    },
+  };
+  const transactionRunner = vi.fn(
+    async (callback: (client: typeof transaction) => Promise<unknown>) =>
+      callback(transaction),
+  );
+  const database = {
+    $transaction: transactionRunner,
+  } as unknown as PrismaClient;
+
+  return { database, transaction, transactionRunner };
+}
+
+describe("TaskService.confirmDecomposition", () => {
+  it("creates every confirmed subtask inside one transaction", async () => {
+    const { database, transaction, transactionRunner } =
+      createTransactionDatabaseMock();
+    const service = new TaskService(database);
+
+    await expect(
+      service.confirmDecomposition(taskRecord.id, confirmedSubtasks),
+    ).resolves.toHaveLength(2);
+    expect(transactionRunner).toHaveBeenCalledTimes(1);
+    expect(transaction.task.findUnique).toHaveBeenCalledWith({
+      where: { id: taskRecord.id },
+      select: { id: true, parentTaskId: true },
+    });
+    expect(transaction.task.create).toHaveBeenNthCalledWith(1, {
+      data: {
+        ...confirmedSubtasks[0],
+        status: "TODO",
+        parentTaskId: taskRecord.id,
+      },
+    });
+    expect(transaction.task.create).toHaveBeenNthCalledWith(2, {
+      data: {
+        ...confirmedSubtasks[1],
+        status: "TODO",
+        parentTaskId: taskRecord.id,
+      },
+    });
+  });
+
+  it("rejects a current-title conflict before writing anything", async () => {
+    const { database, transaction } = createTransactionDatabaseMock({
+      existingTitles: ["  IMPLEMENT CONFIRMATION  "],
+    });
+    const service = new TaskService(database);
+
+    await expect(
+      service.confirmDecomposition(taskRecord.id, confirmedSubtasks),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "DECOMPOSITION_CONFLICT",
+    });
+    expect(transaction.task.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a subtask as the decomposition source", async () => {
+    const { database, transaction } = createTransactionDatabaseMock({
+      sourceTask: { id: "subtask-id", parentTaskId: taskRecord.id },
+    });
+    const service = new TaskService(database);
+
+    await expect(
+      service.confirmDecomposition("subtask-id", confirmedSubtasks),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "TASK_DECOMPOSITION_NOT_ALLOWED",
+    });
+    expect(transaction.task.findMany).not.toHaveBeenCalled();
+    expect(transaction.task.create).not.toHaveBeenCalled();
+  });
+
+  it("propagates a write failure from the single atomic transaction", async () => {
+    const { database, transactionRunner } = createTransactionDatabaseMock({
+      createFailureAt: 2,
+    });
+    const service = new TaskService(database);
+
+    await expect(
+      service.confirmDecomposition(taskRecord.id, confirmedSubtasks),
+    ).rejects.toThrow("database write failed");
+    expect(transactionRunner).toHaveBeenCalledTimes(1);
+  });
+});

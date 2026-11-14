@@ -16,6 +16,11 @@ export type TaskDecompositionSource = Task & {
   existingSubtaskCount: number;
 };
 
+export type ConfirmedSubtaskInput = Pick<
+  Task,
+  "title" | "description" | "priority"
+>;
+
 const priorityRank = {
   LOW: 1,
   MEDIUM: 2,
@@ -111,6 +116,70 @@ export class TaskService {
   async listSubtasks(parentTaskId: string): Promise<Task[]> {
     return this.db.task.findMany({
       where: { parentTaskId },
+    });
+  }
+
+  async confirmDecomposition(
+    taskId: string,
+    subtasks: readonly ConfirmedSubtaskInput[],
+  ): Promise<Task[]> {
+    return this.db.$transaction(async (transaction) => {
+      const sourceTask = await transaction.task.findUnique({
+        where: { id: taskId },
+        select: { id: true, parentTaskId: true },
+      });
+
+      if (sourceTask === null) {
+        throw new ApiError(404, "TASK_NOT_FOUND", "Task not found");
+      }
+
+      if (sourceTask.parentTaskId !== null) {
+        throw new ApiError(
+          409,
+          "TASK_DECOMPOSITION_NOT_ALLOWED",
+          "A subtask cannot be decomposed",
+        );
+      }
+
+      const existingSubtasks = await transaction.task.findMany({
+        where: { parentTaskId: taskId },
+        select: { title: true },
+      });
+      const seenTitles = new Set(
+        existingSubtasks.map((subtask) =>
+          subtask.title.trim().toLocaleLowerCase(),
+        ),
+      );
+
+      for (const subtask of subtasks) {
+        const normalizedTitle = subtask.title.trim().toLocaleLowerCase();
+
+        if (seenTitles.has(normalizedTitle)) {
+          throw new ApiError(
+            409,
+            "DECOMPOSITION_CONFLICT",
+            "One or more subtasks conflict with current task data",
+          );
+        }
+
+        seenTitles.add(normalizedTitle);
+      }
+
+      const createdSubtasks: Task[] = [];
+
+      for (const subtask of subtasks) {
+        createdSubtasks.push(
+          await transaction.task.create({
+            data: {
+              ...subtask,
+              status: "TODO",
+              parentTaskId: taskId,
+            },
+          }),
+        );
+      }
+
+      return createdSubtasks;
     });
   }
 

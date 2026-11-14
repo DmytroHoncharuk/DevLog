@@ -12,13 +12,22 @@ import {
 } from "./task-decomposition.provider";
 import {
   clarificationHistorySchema,
+  decompositionConfirmRequestSchema,
   parseTaskDecompositionResult,
+  type DecompositionConfirmRequest,
   type TaskDecompositionResult,
 } from "./task-decomposition.schemas";
 
 export interface TaskDecompositionTaskReader {
   getDecompositionSource(taskId: string): Promise<TaskDecompositionSource>;
   listSubtasks(parentTaskId: string): Promise<Task[]>;
+}
+
+export interface TaskDecompositionTaskWriter {
+  confirmDecomposition(
+    taskId: string,
+    subtasks: DecompositionConfirmRequest["subtasks"],
+  ): Promise<Task[]>;
 }
 
 export type TaskDecompositionPreview = {
@@ -92,6 +101,7 @@ export class TaskDecompositionService {
     }
 
     let providerResult;
+    let existingSubtasksInspected = false;
 
     try {
       providerResult = await this.provider.generate(
@@ -105,12 +115,14 @@ export class TaskDecompositionService {
           clarificationHistory: parsedClarificationHistory,
         },
         {
-          getExistingSubtasks: async () =>
-            (await this.tasks.listSubtasks(task.id)).map((subtask) => ({
+          getExistingSubtasks: async () => {
+            existingSubtasksInspected = true;
+            return (await this.tasks.listSubtasks(task.id)).map((subtask) => ({
               title: subtask.title,
               description: subtask.description,
               priority: subtask.priority,
-            })),
+            }));
+          },
         },
       );
     } catch (error) {
@@ -145,6 +157,14 @@ export class TaskDecompositionService {
       }
 
       throw error;
+    }
+
+    if (task.existingSubtaskCount > 0 && !existingSubtasksInspected) {
+      throw new ApiError(
+        502,
+        "AI_PROVIDER_INVALID_RESPONSE",
+        "AI provider returned an invalid decomposition",
+      );
     }
 
     let result: TaskDecompositionResult;
@@ -196,3 +216,33 @@ export class TaskDecompositionService {
     };
   }
 }
+
+export class TaskDecompositionConfirmationService {
+  constructor(
+    private readonly tasks: TaskDecompositionTaskWriter = taskService,
+  ) {}
+
+  async confirm(
+    taskId: string,
+    input: unknown,
+  ): Promise<Task[]> {
+    const parsed = decompositionConfirmRequestSchema.safeParse(input);
+
+    if (!parsed.success) {
+      throw new ApiError(
+        400,
+        "VALIDATION_ERROR",
+        "Invalid decomposition confirmation payload",
+        parsed.error.issues.map((issue) => ({
+          path: issue.path.map(String).join("."),
+          message: issue.message,
+        })),
+      );
+    }
+
+    return this.tasks.confirmDecomposition(taskId, parsed.data.subtasks);
+  }
+}
+
+export const taskDecompositionConfirmationService =
+  new TaskDecompositionConfirmationService();

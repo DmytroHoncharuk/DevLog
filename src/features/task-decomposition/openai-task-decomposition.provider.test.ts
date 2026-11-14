@@ -14,6 +14,11 @@ const input = {
   clarificationHistory: [],
 };
 
+const inputWithoutExistingSubtasks = {
+  ...input,
+  existingSubtaskCount: 0,
+};
+
 const decomposedOutput = {
   outcome: "decomposed" as const,
   subtasks: [
@@ -37,6 +42,13 @@ const clarificationOutput = {
   subtasks: [],
   reason: "The expected result is unclear.",
   questions: ["What should the task produce?"],
+};
+
+const noNewSubtasksOutput = {
+  outcome: "no_new_subtasks" as const,
+  subtasks: [],
+  reason: "Existing subtasks cover the stated scope.",
+  questions: [],
 };
 
 function createClient(parse: ReturnType<typeof vi.fn>): OpenAI {
@@ -70,7 +82,7 @@ function functionCall(
 }
 
 describe("OpenAITaskDecompositionProvider", () => {
-  it("returns a clear-task decomposition without an unnecessary tool call", async () => {
+  it("allows a direct decomposition when there are no existing subtasks", async () => {
     const parse = vi.fn().mockResolvedValue({
       status: "completed",
       output: [],
@@ -82,14 +94,39 @@ describe("OpenAITaskDecompositionProvider", () => {
       "configured-model",
     );
 
-    await expect(provider.generate(input, tools)).resolves.toEqual({
+    await expect(
+      provider.generate(inputWithoutExistingSubtasks, tools),
+    ).resolves.toEqual({
       output: decomposedOutput,
       trace: { modelTurns: 1, toolCalls: [] },
     });
     expect(tools.getExistingSubtasks).not.toHaveBeenCalled();
+    expect(parse.mock.calls[0][0].tool_choice).toBe("auto");
   });
 
-  it("executes a model-selected existing-subtasks tool and supplies its result before the final output", async () => {
+  it("rejects a final response before required existing-subtask inspection", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      status: "completed",
+      output: [],
+      output_parsed: decomposedOutput,
+    });
+    const tools = createTools();
+    const provider = new OpenAITaskDecompositionProvider(
+      createClient(parse),
+      "configured-model",
+    );
+
+    await expect(provider.generate(input, tools)).rejects.toMatchObject({
+      kind: "invalid_response",
+    });
+    expect(parse.mock.calls[0][0].tool_choice).toEqual({
+      type: "function",
+      name: "get_existing_subtasks",
+    });
+    expect(tools.getExistingSubtasks).not.toHaveBeenCalled();
+  });
+
+  it("executes the application-required existing-subtasks tool and supplies its result before the final output", async () => {
     const call = functionCall();
     const parse = vi
       .fn()
@@ -117,6 +154,11 @@ describe("OpenAITaskDecompositionProvider", () => {
       },
     });
     expect(tools.getExistingSubtasks).toHaveBeenCalledTimes(1);
+    expect(parse.mock.calls[0][0].tool_choice).toEqual({
+      type: "function",
+      name: "get_existing_subtasks",
+    });
+    expect(parse.mock.calls[1][0].tool_choice).toBe("auto");
 
     const secondRequest = parse.mock.calls[1][0];
     expect(secondRequest.input).toHaveLength(3);
@@ -140,9 +182,35 @@ describe("OpenAITaskDecompositionProvider", () => {
       "configured-model",
     );
 
-    await expect(provider.generate(input, createTools())).resolves.toMatchObject({
-      output: clarificationOutput,
+    await expect(
+      provider.generate(inputWithoutExistingSubtasks, createTools()),
+    ).resolves.toMatchObject({ output: clarificationOutput });
+  });
+
+  it("returns no new subtasks after required existing-scope inspection", async () => {
+    const parse = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "completed",
+        output: [functionCall()],
+        output_parsed: null,
+      })
+      .mockResolvedValueOnce({
+        status: "completed",
+        output: [],
+        output_parsed: noNewSubtasksOutput,
+      });
+    const tools = createTools();
+    const provider = new OpenAITaskDecompositionProvider(
+      createClient(parse),
+      "configured-model",
+    );
+
+    await expect(provider.generate(input, tools)).resolves.toMatchObject({
+      output: noNewSubtasksOutput,
+      trace: { modelTurns: 2, toolCalls: ["get_existing_subtasks"] },
     });
+    expect(tools.getExistingSubtasks).toHaveBeenCalledTimes(1);
   });
 
   it("keeps clarification answers in untrusted user input and lets them affect the next result", async () => {
@@ -174,11 +242,14 @@ describe("OpenAITaskDecompositionProvider", () => {
       ],
     };
 
-    await expect(provider.generate(input, createTools())).resolves.toMatchObject({
-      output: clarificationOutput,
-    });
     await expect(
-      provider.generate(clarifiedInput, createTools()),
+      provider.generate(inputWithoutExistingSubtasks, createTools()),
+    ).resolves.toMatchObject({ output: clarificationOutput });
+    await expect(
+      provider.generate(
+        { ...clarifiedInput, existingSubtaskCount: 0 },
+        createTools(),
+      ),
     ).resolves.toMatchObject({ output: decomposedOutput });
 
     const request = parse.mock.calls[1][0];
@@ -261,9 +332,9 @@ describe("OpenAITaskDecompositionProvider", () => {
       "configured-model",
     );
 
-    await expect(provider.generate(input, createTools())).rejects.toMatchObject({
-      kind: "invalid_response",
-    });
+    await expect(
+      provider.generate(inputWithoutExistingSubtasks, createTools()),
+    ).rejects.toMatchObject({ kind: "invalid_response" });
   });
 
   it("retries one transient failure and returns parsed output", async () => {
@@ -282,9 +353,9 @@ describe("OpenAITaskDecompositionProvider", () => {
       "configured-model",
     );
 
-    await expect(provider.generate(input, createTools())).resolves.toMatchObject({
-      output: clarificationOutput,
-    });
+    await expect(
+      provider.generate(inputWithoutExistingSubtasks, createTools()),
+    ).resolves.toMatchObject({ output: clarificationOutput });
     expect(parse).toHaveBeenCalledTimes(2);
   });
 
@@ -299,9 +370,9 @@ describe("OpenAITaskDecompositionProvider", () => {
       "configured-model",
     );
 
-    await expect(provider.generate(input, createTools())).rejects.toBeInstanceOf(
-      TaskDecompositionProviderError,
-    );
+    await expect(
+      provider.generate(inputWithoutExistingSubtasks, createTools()),
+    ).rejects.toBeInstanceOf(TaskDecompositionProviderError);
     expect(parse).toHaveBeenCalledTimes(1);
   });
 });

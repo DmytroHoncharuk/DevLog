@@ -33,16 +33,18 @@ function safeMutationMessage(error: unknown, fallback: string): string {
   return error instanceof TaskApiError ? error.message : fallback;
 }
 
-function Modal({
+export function Modal({
   titleId,
   children,
   onClose,
   locked,
+  width = "default",
 }: {
   titleId: string;
   children: ReactNode;
   onClose: () => void;
   locked: boolean;
+  width?: "default" | "wide";
 }) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -61,7 +63,9 @@ function Modal({
       }}
     >
       <section
-        className="dialog-content-enter w-full max-w-xl rounded-3xl border border-slate-200 bg-white shadow-2xl"
+        className={`dialog-content-enter w-full rounded-3xl border border-slate-200 bg-white shadow-2xl ${
+          width === "wide" ? "max-w-4xl" : "max-w-xl"
+        }`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

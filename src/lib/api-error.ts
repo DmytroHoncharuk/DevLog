@@ -10,6 +10,7 @@ export type ApiErrorCode =
   | "AI_AGENT_LIMIT_REACHED"
   | "AI_TOOL_CALL_INVALID"
   | "CLARIFICATION_LIMIT_REACHED"
+  | "DECOMPOSITION_CONFLICT"
   | "INTERNAL_ERROR";
 
 export class ApiError extends Error {

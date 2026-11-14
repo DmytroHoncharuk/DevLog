@@ -40,11 +40,38 @@ export const generatedSubtaskSchema = z
   })
   .strict();
 
+export const decompositionConfirmRequestSchema = z
+  .object({
+    subtasks: z.array(generatedSubtaskSchema).min(1).max(7),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const seenTitles = new Set<string>();
+
+    value.subtasks.forEach((subtask, index) => {
+      const normalizedTitle = subtask.title.trim().toLocaleLowerCase();
+
+      if (seenTitles.has(normalizedTitle)) {
+        context.addIssue({
+          code: "custom",
+          path: ["subtasks", index, "title"],
+          message: "Subtask titles must be unique",
+        });
+      }
+
+      seenTitles.add(normalizedTitle);
+    });
+  });
+
 // Structured Outputs requires a root object rather than a root-level anyOf.
 // The service converts this provider shape into the stricter domain union below.
 export const taskDecompositionProviderOutputSchema = z
   .object({
-    outcome: z.enum(["decomposed", "needs_clarification"]),
+    outcome: z.enum([
+      "decomposed",
+      "needs_clarification",
+      "no_new_subtasks",
+    ]),
     subtasks: z.array(generatedSubtaskSchema).max(7),
     reason: z.string().trim().max(1000).nullable(),
     questions: z.array(z.string().trim().min(1).max(500)).max(3),
@@ -54,7 +81,7 @@ export const taskDecompositionProviderOutputSchema = z
 export const decomposedResultSchema = z
   .object({
     outcome: z.literal("decomposed"),
-    subtasks: z.array(generatedSubtaskSchema).min(2).max(7),
+    subtasks: z.array(generatedSubtaskSchema).min(1).max(7),
   })
   .strict();
 
@@ -66,14 +93,25 @@ export const needsClarificationResultSchema = z
   })
   .strict();
 
+export const noNewSubtasksResultSchema = z
+  .object({
+    outcome: z.literal("no_new_subtasks"),
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+
 export const taskDecompositionResultSchema = z.discriminatedUnion("outcome", [
   decomposedResultSchema,
   needsClarificationResultSchema,
+  noNewSubtasksResultSchema,
 ]);
 
 export type GeneratedSubtask = z.infer<typeof generatedSubtaskSchema>;
 export type DecompositionPreviewRequest = z.infer<
   typeof decompositionPreviewRequestSchema
+>;
+export type DecompositionConfirmRequest = z.infer<
+  typeof decompositionConfirmRequestSchema
 >;
 export type TaskDecompositionResult = z.infer<
   typeof taskDecompositionResultSchema
@@ -101,19 +139,40 @@ export function parseTaskDecompositionResult(
     });
   }
 
-  if (providerOutput.subtasks.length > 0 || providerOutput.reason === null) {
+  if (providerOutput.outcome === "needs_clarification") {
+    if (providerOutput.subtasks.length > 0 || providerOutput.reason === null) {
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path: ["outcome"],
+          message: "A clarification result cannot contain generated subtasks",
+        },
+      ]);
+    }
+
+    return needsClarificationResultSchema.parse({
+      outcome: providerOutput.outcome,
+      reason: providerOutput.reason,
+      questions: providerOutput.questions,
+    });
+  }
+
+  if (
+    providerOutput.subtasks.length > 0 ||
+    providerOutput.reason === null ||
+    providerOutput.questions.length > 0
+  ) {
     throw new z.ZodError([
       {
         code: "custom",
         path: ["outcome"],
-        message: "A clarification result cannot contain generated subtasks",
+        message: "A no-new-subtasks result cannot contain generated work",
       },
     ]);
   }
 
-  return needsClarificationResultSchema.parse({
+  return noNewSubtasksResultSchema.parse({
     outcome: providerOutput.outcome,
     reason: providerOutput.reason,
-    questions: providerOutput.questions,
   });
 }

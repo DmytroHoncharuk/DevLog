@@ -75,9 +75,9 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 ## Confirmed AI direction
 
 - Agent B, root-task decomposition, is the first confirmed AI capability. Its full contract is in `docs/agent-b-contract.md` and must be read before planning or implementation.
-- Agent B cannot decompose a subtask. It returns either an editable two-to-seven-item preview or a successful `needs_clarification` result when completing the decomposition would require invented scope.
-- Existing subtasks are read-only generation context; Agent B proposes only new, non-duplicate items.
-- Agent B uses a bounded provider-neutral tool loop with two model turns and one read-only `get_existing_subtasks` call. The model selects whether the tool is needed; initial context contains only the current subtask count.
+- Agent B cannot decompose a subtask. It returns an editable one-to-seven-item preview, a successful `needs_clarification` result when remaining scope is unclear, or `no_new_subtasks` with an explanation when existing subtasks already cover the explicitly stated scope.
+- Existing subtasks are read-only generation context and count as scope coverage regardless of status; an incomplete existing subtask must not be regenerated. Agent B proposes only genuinely missing, non-duplicate work.
+- Agent B uses a bounded provider-neutral tool loop with two model turns and one read-only `get_existing_subtasks` call. When the current subtask count is greater than zero, application policy requires the first turn to call the tool before a final outcome; when the count is zero, the model may respond directly.
 - Clarification history remains in frontend state, is strictly validated as untrusted input, is limited to two rounds, and is never allowed to replace the database task or agent instructions. Refreshing or closing the page loses the history in the MVP.
 - Preview is client-held and never persisted. Confirmation revalidates one to seven edited items, detects conflicts against current data, and creates every item atomically or none.
 - Use a provider-neutral `TaskDecompositionProvider` boundary with one OpenAI adapter initially. Provider SDK types, raw payloads, and secrets must not escape the adapter.

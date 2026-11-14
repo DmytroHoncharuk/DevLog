@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { TaskDecompositionDialog } from "@/features/task-decomposition/task-decomposition-dialog";
+
 import { fetchTasks } from "./task-api";
 import {
   DeleteTaskDialog,
@@ -187,13 +189,24 @@ function TaskActions({
   onEdit,
   onDelete,
   onAddSubtask,
+  onDecompose,
 }: {
   onEdit: () => void;
   onDelete: () => void;
   onAddSubtask?: () => void;
+  onDecompose?: () => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2" aria-label="Task actions">
+      {onDecompose ? (
+        <button
+          type="button"
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+          onClick={onDecompose}
+        >
+          Break down with AI
+        </button>
+      ) : null}
       {onAddSubtask ? (
         <button
           type="button"
@@ -252,11 +265,13 @@ function Subtask({
 function TaskCard({
   task,
   onCreateSubtask,
+  onDecompose,
   onEdit,
   onDelete,
 }: {
   task: TaskWithSubtasksResponse;
   onCreateSubtask: () => void;
+  onDecompose: () => void;
   onEdit: (task: TaskResponse) => void;
   onDelete: (target: DeleteTarget) => void;
 }) {
@@ -283,6 +298,7 @@ function TaskCard({
         <div className="border-t border-slate-100 pt-4">
           <TaskActions
             onAddSubtask={onCreateSubtask}
+            onDecompose={onDecompose}
             onEdit={() => onEdit(task)}
             onDelete={() =>
               onDelete({
@@ -352,6 +368,9 @@ export function TaskDashboard() {
   const [retryCount, setRetryCount] = useState(0);
   const [formTarget, setFormTarget] = useState<TaskFormTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [decompositionTarget, setDecompositionTarget] =
+    useState<TaskWithSubtasksResponse | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const filters = useMemo(
     () => taskQueryFromUrl(new URLSearchParams(searchParams.toString())),
     [searchParams],
@@ -452,6 +471,22 @@ export function TaskDashboard() {
             </div>
           </div>
         </header>
+
+        {successNotice ? (
+          <div
+            className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 sm:flex-row sm:items-center sm:justify-between"
+            role="status"
+          >
+            <span>{successNotice}</span>
+            <button
+              type="button"
+              className="self-start rounded-lg px-2 py-1 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 sm:self-auto"
+              onClick={() => setSuccessNotice(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         <section
           className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
@@ -608,6 +643,10 @@ export function TaskDashboard() {
               <TaskCard
                 key={task.id}
                 task={task}
+                onDecompose={() => {
+                  setSuccessNotice(null);
+                  setDecompositionTarget(task);
+                }}
                 onCreateSubtask={() =>
                   setFormTarget({
                     mode: "create",
@@ -646,6 +685,20 @@ export function TaskDashboard() {
           onDeleted={() => {
             setDeleteTarget(null);
             setRetryCount((count) => count + 1);
+          }}
+        />
+      ) : null}
+      {decompositionTarget ? (
+        <TaskDecompositionDialog
+          key={decompositionTarget.id}
+          task={decompositionTarget}
+          onClose={() => setDecompositionTarget(null)}
+          onCreated={(count) => {
+            setDecompositionTarget(null);
+            setSuccessNotice(
+              `Created ${count} ${count === 1 ? "subtask" : "subtasks"}.`,
+            );
+            setRetryCount((current) => current + 1);
           }}
         />
       ) : null}

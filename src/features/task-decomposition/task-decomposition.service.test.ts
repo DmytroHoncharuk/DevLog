@@ -6,8 +6,10 @@ import {
   TaskDecompositionProviderError,
 } from "./task-decomposition.provider";
 import {
+  TaskDecompositionConfirmationService,
   TaskDecompositionService,
   type TaskDecompositionTaskReader,
+  type TaskDecompositionTaskWriter,
 } from "./task-decomposition.service";
 
 const rootTask: Task = {
@@ -57,6 +59,23 @@ function createProvider(output: unknown): TaskDecompositionProvider {
   };
 }
 
+function createProviderWithExistingSubtasks(
+  output: unknown,
+): TaskDecompositionProvider {
+  return {
+    generate: vi.fn().mockImplementation(async (_input, tools) => {
+      await tools.getExistingSubtasks();
+      return {
+        output,
+        trace: {
+          modelTurns: 2,
+          toolCalls: ["get_existing_subtasks"],
+        },
+      };
+    }),
+  };
+}
+
 function createTaskReader(
   task = { ...rootTask, existingSubtaskCount: 1 },
   subtasks: Task[] = [existingSubtask],
@@ -69,15 +88,16 @@ function createTaskReader(
 
 describe("TaskDecompositionService.preview", () => {
   it("passes only neutral root-task data to the provider", async () => {
-    const provider = createProvider(validProviderOutput);
-    const service = new TaskDecompositionService(provider, createTaskReader());
+    const provider = createProviderWithExistingSubtasks(validProviderOutput);
+    const reader = createTaskReader();
+    const service = new TaskDecompositionService(provider, reader);
 
     await expect(service.preview(rootTask.id)).resolves.toMatchObject({
       result: {
         outcome: "decomposed",
         subtasks: validProviderOutput.subtasks,
       },
-      trace: { modelTurns: 1, toolCalls: [] },
+      trace: { modelTurns: 2, toolCalls: ["get_existing_subtasks"] },
       clarificationRoundsUsed: 0,
       clarificationRoundsRemaining: 2,
     });
@@ -96,15 +116,21 @@ describe("TaskDecompositionService.preview", () => {
       }),
     );
 
-    const generate = vi.mocked(provider.generate);
-    const tools = generate.mock.calls[0][1];
-    await expect(tools.getExistingSubtasks()).resolves.toEqual([
-      {
-        title: existingSubtask.title,
-        description: existingSubtask.description,
-        priority: existingSubtask.priority,
-      },
-    ]);
+    expect(reader.listSubtasks).toHaveBeenCalledWith(rootTask.id);
+  });
+
+  it("rejects a provider that skips required existing-subtask inspection", async () => {
+    const reader = createTaskReader();
+    const service = new TaskDecompositionService(
+      createProvider(validProviderOutput),
+      reader,
+    );
+
+    await expect(service.preview(rootTask.id)).rejects.toMatchObject({
+      status: 502,
+      code: "AI_PROVIDER_INVALID_RESPONSE",
+    });
+    expect(reader.listSubtasks).not.toHaveBeenCalled();
   });
 
   it("rejects decomposition of a subtask before calling the provider", async () => {
@@ -131,7 +157,10 @@ describe("TaskDecompositionService.preview", () => {
       reason: "The expected result is unclear.",
       questions: ["What should the completed task produce?"],
     });
-    const reader = createTaskReader();
+    const reader = createTaskReader({
+      ...rootTask,
+      existingSubtaskCount: 0,
+    });
     const service = new TaskDecompositionService(provider, reader);
 
     await expect(service.preview(rootTask.id)).resolves.toMatchObject({
@@ -143,6 +172,80 @@ describe("TaskDecompositionService.preview", () => {
     });
     expect(reader.getDecompositionSource).toHaveBeenCalledTimes(1);
     expect(reader.listSubtasks).not.toHaveBeenCalled();
+  });
+
+  it("returns no new subtasks after inspecting existing scope without persistence", async () => {
+    const reader = createTaskReader();
+    const service = new TaskDecompositionService(
+      createProviderWithExistingSubtasks({
+        outcome: "no_new_subtasks",
+        subtasks: [],
+        reason: "Existing subtasks cover the explicitly stated scope.",
+        questions: [],
+      }),
+      reader,
+    );
+
+    await expect(service.preview(rootTask.id)).resolves.toMatchObject({
+      result: {
+        outcome: "no_new_subtasks",
+        reason: "Existing subtasks cover the explicitly stated scope.",
+      },
+      trace: {
+        modelTurns: 2,
+        toolCalls: ["get_existing_subtasks"],
+      },
+    });
+    expect(reader.getDecompositionSource).toHaveBeenCalledTimes(1);
+    expect(reader.listSubtasks).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats existing subtasks as scope coverage regardless of status", async () => {
+    const doneSubtask = { ...existingSubtask, status: "DONE" as const };
+    const todoSubtask = {
+      ...existingSubtask,
+      id: "todo-subtask-id",
+      title: "Implement the remaining route",
+      status: "TODO" as const,
+    };
+    const reader = createTaskReader(
+      { ...rootTask, existingSubtaskCount: 2 },
+      [doneSubtask, todoSubtask],
+    );
+    const provider: TaskDecompositionProvider = {
+      generate: vi.fn().mockImplementation(async (_input, tools) => {
+        await expect(tools.getExistingSubtasks()).resolves.toEqual([
+          {
+            title: doneSubtask.title,
+            description: doneSubtask.description,
+            priority: doneSubtask.priority,
+          },
+          {
+            title: todoSubtask.title,
+            description: todoSubtask.description,
+            priority: todoSubtask.priority,
+          },
+        ]);
+
+        return {
+          output: {
+            outcome: "no_new_subtasks",
+            subtasks: [],
+            reason: "Existing subtasks cover the stated scope.",
+            questions: [],
+          },
+          trace: {
+            modelTurns: 2,
+            toolCalls: ["get_existing_subtasks"],
+          },
+        };
+      }),
+    };
+    const service = new TaskDecompositionService(provider, reader);
+
+    await expect(service.preview(rootTask.id)).resolves.toMatchObject({
+      result: { outcome: "no_new_subtasks" },
+    });
   });
 
   it.each([
@@ -163,7 +266,10 @@ describe("TaskDecompositionService.preview", () => {
   ])("rejects duplicate generated titles", async (output) => {
     const service = new TaskDecompositionService(
       createProvider(output),
-      createTaskReader(),
+      createTaskReader(
+        { ...rootTask, existingSubtaskCount: 0 },
+        [existingSubtask],
+      ),
     );
 
     await expect(service.preview(rootTask.id)).rejects.toMatchObject({
@@ -175,7 +281,7 @@ describe("TaskDecompositionService.preview", () => {
   it("maps malformed provider output to a safe error", async () => {
     const service = new TaskDecompositionService(
       createProvider({ outcome: "decomposed" }),
-      createTaskReader(),
+      createTaskReader({ ...rootTask, existingSubtaskCount: 0 }),
     );
 
     await expect(service.preview(rootTask.id)).rejects.toMatchObject({
@@ -191,7 +297,10 @@ describe("TaskDecompositionService.preview", () => {
         .fn()
         .mockRejectedValue(new TaskDecompositionProviderError("unavailable")),
     };
-    const service = new TaskDecompositionService(provider, createTaskReader());
+    const service = new TaskDecompositionService(
+      provider,
+      createTaskReader({ ...rootTask, existingSubtaskCount: 0 }),
+    );
 
     await expect(service.preview(rootTask.id)).rejects.toMatchObject({
       status: 503,
@@ -203,7 +312,10 @@ describe("TaskDecompositionService.preview", () => {
 
   it("passes validated clarification history without replacing the current database task", async () => {
     const provider = createProvider(validProviderOutput);
-    const reader = createTaskReader();
+    const reader = createTaskReader({
+      ...rootTask,
+      existingSubtaskCount: 0,
+    });
     const service = new TaskDecompositionService(provider, reader);
     const clarificationHistory = [
       {
@@ -235,7 +347,10 @@ describe("TaskDecompositionService.preview", () => {
       reason: "More context is still required.",
       questions: ["Which exact format is required?"],
     });
-    const service = new TaskDecompositionService(provider, createTaskReader());
+    const service = new TaskDecompositionService(
+      provider,
+      createTaskReader({ ...rootTask, existingSubtaskCount: 0 }),
+    );
     const clarificationHistory = [
       {
         items: [{ question: "First question?", answer: "First answer." }],
@@ -266,5 +381,48 @@ describe("TaskDecompositionService.preview", () => {
       code: "AI_AGENT_LIMIT_REACHED",
       details: [],
     });
+  });
+});
+
+describe("TaskDecompositionConfirmationService.confirm", () => {
+  it("revalidates and forwards the edited preview without calling a provider", async () => {
+    const writer: TaskDecompositionTaskWriter = {
+      confirmDecomposition: vi.fn().mockResolvedValue([existingSubtask]),
+    };
+    const service = new TaskDecompositionConfirmationService(writer);
+
+    await expect(
+      service.confirm(rootTask.id, {
+        subtasks: [
+          {
+            title: "  Create the route  ",
+            description: "  Persist every confirmed item atomically.  ",
+            priority: "HIGH",
+          },
+        ],
+      }),
+    ).resolves.toEqual([existingSubtask]);
+    expect(writer.confirmDecomposition).toHaveBeenCalledWith(rootTask.id, [
+      {
+        title: "Create the route",
+        description: "Persist every confirmed item atomically.",
+        priority: "HIGH",
+      },
+    ]);
+  });
+
+  it("rejects invalid edited previews before persistence", async () => {
+    const writer: TaskDecompositionTaskWriter = {
+      confirmDecomposition: vi.fn(),
+    };
+    const service = new TaskDecompositionConfirmationService(writer);
+
+    await expect(
+      service.confirm(rootTask.id, { subtasks: [] }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+    expect(writer.confirmDecomposition).not.toHaveBeenCalled();
   });
 });

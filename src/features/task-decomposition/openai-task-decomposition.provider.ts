@@ -78,7 +78,14 @@ export class OpenAITaskDecompositionProvider
     };
 
     for (let turn = 1; turn <= MAX_MODEL_TURNS; turn += 1) {
-      const response = await this.requestModel(toResponseInputItems(history));
+      const mustInspectExistingSubtasks =
+        input.existingSubtaskCount > 0 && trace.toolCalls.length === 0;
+      const response = await this.requestModel(
+        toResponseInputItems(history),
+        mustInspectExistingSubtasks
+          ? { type: "function", name: GET_EXISTING_SUBTASKS_TOOL }
+          : "auto",
+      );
       trace.modelTurns = turn;
 
       if (response.status !== "completed" || !Array.isArray(response.output)) {
@@ -90,6 +97,10 @@ export class OpenAITaskDecompositionProvider
       );
 
       if (functionCalls.length === 0) {
+        if (mustInspectExistingSubtasks) {
+          throw new TaskDecompositionProviderError("invalid_response");
+        }
+
         if (response.output_parsed === null) {
           throw new TaskDecompositionProviderError("invalid_response");
         }
@@ -133,7 +144,12 @@ export class OpenAITaskDecompositionProvider
     throw new TaskDecompositionProviderError("limit_reached");
   }
 
-  private async requestModel(input: ResponseInputItem[]) {
+  private async requestModel(
+    input: ResponseInputItem[],
+    toolChoice:
+      | "auto"
+      | { type: "function"; name: typeof GET_EXISTING_SUBTASKS_TOOL },
+  ) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         return await this.client.responses.parse({
@@ -142,7 +158,7 @@ export class OpenAITaskDecompositionProvider
           input,
           store: false,
           parallel_tool_calls: false,
-          tool_choice: "auto",
+          tool_choice: toolChoice,
           tools: [
             {
               type: "function",
