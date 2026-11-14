@@ -51,10 +51,13 @@ const statusLabels: Record<Status, string> = {
 };
 
 const priorityLabels: Record<Priority, string> = {
-  LOW: "Low priority",
-  MEDIUM: "Medium priority",
-  HIGH: "High priority",
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
 };
+
+const selectClassName =
+  "w-full cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:border-slate-400 focus-visible:border-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600";
 
 const sortOptions: ReadonlyArray<{
   label: string;
@@ -186,6 +189,39 @@ function TaskDescription({ description }: { description: string }) {
   );
 }
 
+function TaskAiActions({
+  onDecompose,
+  onReadiness,
+}: {
+  onDecompose?: () => void;
+  onReadiness: () => void;
+}) {
+  return (
+      <div
+          className="flex flex-wrap gap-2 sm:justify-end"
+          aria-label="AI task actions"
+      >
+        {onDecompose ? (
+            <button
+                type="button"
+                className="min-w-36 rounded-lg bg-[#64748B] px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#475569] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#64748B]"
+                onClick={onDecompose}
+            >
+              Break down with AI
+            </button>
+        ) : null}
+
+        <button
+            type="button"
+            className="min-w-36 rounded-lg bg-[#64748B] px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#475569] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#64748B]"
+            onClick={onReadiness}
+        >
+          Check readiness with AI
+        </button>
+      </div>
+  );
+}
+
 function TaskActions({
   onEdit,
   onDelete,
@@ -200,46 +236,36 @@ function TaskActions({
   onReadiness: () => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2" aria-label="Task actions">
-      {onDecompose ? (
+    <div
+      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      aria-label="Task actions"
+    >
+      <div className="flex flex-wrap gap-2" aria-label="Task management actions">
+        {onAddSubtask ? (
+          <button
+            type="button"
+            className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            onClick={onAddSubtask}
+          >
+            Add subtask
+          </button>
+        ) : null}
         <button
           type="button"
-          className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
-          onClick={onDecompose}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          onClick={onEdit}
         >
-          Break down with AI
+          Edit
         </button>
-      ) : null}
-      <button
-        type="button"
-        className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 transition hover:bg-teal-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-        onClick={onReadiness}
-      >
-        Check readiness
-      </button>
-      {onAddSubtask ? (
         <button
           type="button"
-          className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-          onClick={onAddSubtask}
+          className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
+          onClick={onDelete}
         >
-          Add subtask
+          Delete
         </button>
-      ) : null}
-      <button
-        type="button"
-        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-        onClick={onEdit}
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
-        onClick={onDelete}
-      >
-        Delete
-      </button>
+      </div>
+      <TaskAiActions onDecompose={onDecompose} onReadiness={onReadiness} />
     </div>
   );
 }
@@ -293,6 +319,9 @@ function TaskCard({
   onEdit: (task: TaskResponse) => void;
   onDelete: (target: DeleteTarget) => void;
 }) {
+  const [subtasksExpanded, setSubtasksExpanded] = useState(false);
+  const subtasksId = `subtasks-${task.id}`;
+
   return (
     <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)]">
       <div className="space-y-5 p-5 sm:p-6">
@@ -331,32 +360,55 @@ function TaskCard({
 
         {task.subtasks.length > 0 ? (
           <section
-            className="space-y-3 border-t border-slate-100 pt-5"
+            className="border-t border-slate-100 pt-5"
             aria-label="Subtasks"
           >
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-slate-800">Subtasks</h3>
-              <span className="text-sm font-medium text-slate-400">
-                {task.subtasks.length}
-              </span>
-            </div>
-            <ul className="space-y-3">
-              {task.subtasks.map((subtask) => (
-                <Subtask
-                  key={subtask.id}
-                  task={subtask}
-                  onEdit={() => onEdit(subtask)}
-                  onReadiness={() => onReadiness(subtask)}
-                  onDelete={() =>
-                    onDelete({
-                      id: subtask.id,
-                      title: subtask.title,
-                      subtaskCount: 0,
-                    })
-                  }
-                />
-              ))}
-            </ul>
+            <h3>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 rounded-lg py-1 text-left text-sm font-bold text-slate-800 transition hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600"
+                aria-expanded={subtasksExpanded}
+                aria-controls={subtasksId}
+                onClick={() => setSubtasksExpanded((current) => !current)}
+              >
+                <span>Subtasks</span>
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  className={`size-5 shrink-0 text-slate-500 transition-transform ${
+                    subtasksExpanded ? "rotate-180" : ""
+                  }`}
+                >
+                  <path
+                    d="m6 8 4 4 4-4"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </h3>
+            {subtasksExpanded ? (
+              <ul id={subtasksId} className="mt-3 space-y-3">
+                {task.subtasks.map((subtask) => (
+                  <Subtask
+                    key={subtask.id}
+                    task={subtask}
+                    onEdit={() => onEdit(subtask)}
+                    onReadiness={() => onReadiness(subtask)}
+                    onDelete={() =>
+                      onDelete({
+                        id: subtask.id,
+                        title: subtask.title,
+                        subtaskCount: 0,
+                      })
+                    }
+                  />
+                ))}
+              </ul>
+            ) : null}
           </section>
         ) : null}
       </div>
@@ -459,38 +511,17 @@ export function TaskDashboard() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-6 sm:py-12 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-8">
-        <header className="rounded-3xl border border-slate-200 bg-white px-5 py-7 text-slate-950 shadow-sm sm:px-8 sm:py-9">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-3">
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-indigo-600">
-                Local task workspace
-              </p>
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  DevLog
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
-                  Keep the work visible, focused, and moving forward.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-indigo-50 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">
-                  Root tasks
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
-                  {visibleSuccess?.total ?? "—"}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                onClick={() => setFormTarget({ mode: "create", parent: null })}
-              >
-                Create task
-              </button>
-            </div>
+        <header className="rounded-3xl border border-slate-200 bg-white px-5 py-6 text-slate-950 shadow-sm sm:px-7 sm:py-7">
+          <div className="max-w-2xl">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-indigo-600">
+              Local task workspace
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+              DevLog
+            </h1>
+            <p className="mt-1.5 text-sm leading-6 text-slate-600 sm:text-base">
+              Keep the work visible, focused, and moving forward.
+            </p>
           </div>
         </header>
 
@@ -518,7 +549,7 @@ export function TaskDashboard() {
             <label className="space-y-2 text-sm font-semibold text-slate-700">
               <span>Status</span>
               <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                className={selectClassName}
                 value={filters.status}
                 onChange={(event) => updateUrl({ status: event.target.value })}
               >
@@ -534,7 +565,7 @@ export function TaskDashboard() {
             <label className="space-y-2 text-sm font-semibold text-slate-700">
               <span>Priority</span>
               <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                className={selectClassName}
                 value={filters.priority}
                 onChange={(event) => updateUrl({ priority: event.target.value })}
               >
@@ -550,7 +581,7 @@ export function TaskDashboard() {
             <label className="space-y-2 text-sm font-semibold text-slate-700">
               <span>Sort</span>
               <select
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                className={selectClassName}
                 value={sortValue}
                 onChange={(event) => {
                   const selected = sortOptions.find(
@@ -581,6 +612,19 @@ export function TaskDashboard() {
             {isRefreshing ? "Updating tasks" : ""}
           </p>
         </section>
+
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-bold tracking-tight text-slate-950">
+            Tasks
+          </h2>
+          <button
+            type="button"
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            onClick={() => setFormTarget({ mode: "create", parent: null })}
+          >
+            Create task
+          </button>
+        </div>
 
         {settledState?.status === "error" ? (
           <section
@@ -641,15 +685,7 @@ export function TaskDashboard() {
               >
                 Clear filters
               </button>
-            ) : (
-              <button
-                type="button"
-                className="mt-5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                onClick={() => setFormTarget({ mode: "create", parent: null })}
-              >
-                Create task
-              </button>
-            )}
+            ) : null}
           </section>
         ) : (
           <section
