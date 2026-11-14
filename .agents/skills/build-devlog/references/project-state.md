@@ -74,7 +74,7 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 
 ## Confirmed AI direction
 
-- Agent B, root-task decomposition, is the first confirmed AI capability. Its full contract is in `docs/agent-b-contract.md` and must be read before planning or implementation.
+- Agent B, root-task decomposition, is the first confirmed AI capability. It is fully implemented, covered by automated tests, and manually verified with the real OpenAI API. Its full contract is in `docs/agent-b-contract.md` and must be read before planning or implementation.
 - Agent B cannot decompose a subtask. It returns an editable one-to-seven-item preview, a successful `needs_clarification` result when remaining scope is unclear, or `no_new_subtasks` with an explanation when existing subtasks already cover the explicitly stated scope.
 - Existing subtasks are read-only generation context and count as scope coverage regardless of status; an incomplete existing subtask must not be regenerated. Agent B proposes only genuinely missing, non-duplicate work.
 - Agent B uses a bounded provider-neutral tool loop with two model turns and one read-only `get_existing_subtasks` call. When the current subtask count is greater than zero, application policy requires the first turn to call the tool before a final outcome; when the count is zero, the model may respond directly.
@@ -82,6 +82,10 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 - Preview is client-held and never persisted. Confirmation revalidates one to seven edited items, detects conflicts against current data, and creates every item atomically or none.
 - Use a provider-neutral `TaskDecompositionProvider` boundary with one OpenAI adapter initially. Provider SDK types, raw payloads, and secrets must not escape the adapter.
 - OpenAI is the confirmed first provider; the concrete model remains an open decision and must be supplied through server-only environment configuration.
+- Agent D, task readiness, is the explicitly approved second AI capability. Its full contract is in `docs/agent-d-contract.md`; implementation proceeds in separate user-approved atomic steps.
+- Agent D audits one selected root task or subtask against clarity, scope, acceptance criteria, testability, and dependencies. It may return `ready`, ask up to three clarification questions, or propose an editable title/description rewrite. It never creates subtasks or writes during analysis.
+- Agent D uses a bounded provider-neutral loop with at most four model turns, mandatory model-selected `get_task_with_subtasks`, optional `find_related_tasks`, strict successful-outcome validation, two clarification rounds, and separate explicit stale-safe confirmation.
+- Agent D is implemented end to end with a dedicated OpenAI prompt and adapter, read-only analysis and clarification endpoint, signed stale-safe rewrite confirmation, root/subtask dashboard entry points, and automated provider/service/API/dialog coverage. Real-model and interactive browser verification remain outstanding and Stage 3 therefore remains `in-progress`.
 - A real LLM API must be exercised before agent B is considered complete; a mock-only implementation is insufficient.
 - Do not choose or implement the second required agent without explicit user approval.
 
@@ -95,5 +99,4 @@ Allowed statuses: `not-started`, `in-progress`, `blocked`, `done`.
 ## Open decisions
 
 - Concrete OpenAI model for Agent B.
-- The second required AI agent.
 - Whether and when to add the optional seed.

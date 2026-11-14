@@ -8,17 +8,17 @@ Before planning or changing this repository:
 
 1. Read `.agents/skills/build-devlog/SKILL.md` and follow its atomic-step workflow.
 2. Read `.agents/skills/build-devlog/references/project-state.md` for confirmed decisions, stage status, and open decisions.
-3. For any Agent B or AI-stage work, read `docs/agent-b-contract.md` in full. It is the detailed source of truth and overrides assumptions about decomposition behavior.
+3. For Agent B work, read `docs/agent-b-contract.md` in full. For Agent D work, read `docs/agent-d-contract.md` in full. These are the detailed sources of truth for their separate agent behaviors.
 4. Before writing Next.js code, read the relevant installed guide under `node_modules/next/dist/docs/` as required below. Do not rely on remembered Next.js APIs.
 
 ## Current delivery state
 
 - Stage 1, foundation and backend CRUD: done.
 - Stage 2, frontend CRUD: done and manually verified by the user.
-- Stage 3, AI functions: in progress at the contract stage. Agent B is specified but not implemented. OpenAI is the first provider; the concrete model is not yet selected.
+- Stage 3, AI functions: in progress. Agent B is fully implemented, tested, and manually verified. Agent D is implemented across provider, service, API, and UI with automated verification; real-model and interactive browser verification remain outstanding.
 - Stage 4, final verification and submission: not started.
 
-Do not mark a stage done until its acceptance criteria are verified. Do not choose or implement the second AI agent until the user explicitly approves it.
+Do not mark a stage done until its acceptance criteria are verified. Agent D is the explicitly approved second AI agent; implement it only through user-approved atomic steps.
 
 ## Architecture and working rules
 
