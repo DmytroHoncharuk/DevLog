@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { fetchTasks } from "./task-api";
+import {
+  DeleteTaskDialog,
+  TaskFormDialog,
+  type DeleteTarget,
+  type TaskFormTarget,
+} from "./task-dialogs";
 import type {
   TaskResponse,
   TaskWithSubtasksResponse,
@@ -28,11 +34,12 @@ type SortOrder = (typeof sortOrders)[number];
 type LoadState =
   | {
       query: string;
+      requestKey: string;
       status: "success";
       tasks: TaskWithSubtasksResponse[];
       total: number;
     }
-  | { query: string; status: "error"; message: string };
+  | { query: string; requestKey: string; status: "error"; message: string };
 
 const statusLabels: Record<Status, string> = {
   TODO: "To do",
@@ -176,7 +183,53 @@ function TaskDescription({ description }: { description: string }) {
   );
 }
 
-function Subtask({ task }: { task: TaskResponse }) {
+function TaskActions({
+  onEdit,
+  onDelete,
+  onAddSubtask,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddSubtask?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" aria-label="Task actions">
+      {onAddSubtask ? (
+        <button
+          type="button"
+          className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          onClick={onAddSubtask}
+        >
+          Add subtask
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+        onClick={onEdit}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-700"
+        onClick={onDelete}
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
+function Subtask({
+  task,
+  onEdit,
+  onDelete,
+}: {
+  task: TaskResponse;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <li className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -189,11 +242,24 @@ function Subtask({ task }: { task: TaskResponse }) {
           <PriorityBadge priority={task.priority} />
         </div>
       </div>
+      <div className="mt-4 border-t border-slate-200 pt-3">
+        <TaskActions onEdit={onEdit} onDelete={onDelete} />
+      </div>
     </li>
   );
 }
 
-function TaskCard({ task }: { task: TaskWithSubtasksResponse }) {
+function TaskCard({
+  task,
+  onCreateSubtask,
+  onEdit,
+  onDelete,
+}: {
+  task: TaskWithSubtasksResponse;
+  onCreateSubtask: () => void;
+  onEdit: (task: TaskResponse) => void;
+  onDelete: (target: DeleteTarget) => void;
+}) {
   return (
     <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)]">
       <div className="space-y-5 p-5 sm:p-6">
@@ -214,6 +280,20 @@ function TaskCard({ task }: { task: TaskWithSubtasksResponse }) {
 
         <TaskDescription description={task.description} />
 
+        <div className="border-t border-slate-100 pt-4">
+          <TaskActions
+            onAddSubtask={onCreateSubtask}
+            onEdit={() => onEdit(task)}
+            onDelete={() =>
+              onDelete({
+                id: task.id,
+                title: task.title,
+                subtaskCount: task.subtasks.length,
+              })
+            }
+          />
+        </div>
+
         {task.subtasks.length > 0 ? (
           <section
             className="space-y-3 border-t border-slate-100 pt-5"
@@ -227,7 +307,18 @@ function TaskCard({ task }: { task: TaskWithSubtasksResponse }) {
             </div>
             <ul className="space-y-3">
               {task.subtasks.map((subtask) => (
-                <Subtask key={subtask.id} task={subtask} />
+                <Subtask
+                  key={subtask.id}
+                  task={subtask}
+                  onEdit={() => onEdit(subtask)}
+                  onDelete={() =>
+                    onDelete({
+                      id: subtask.id,
+                      title: subtask.title,
+                      subtaskCount: 0,
+                    })
+                  }
+                />
               ))}
             </ul>
           </section>
@@ -259,10 +350,13 @@ export function TaskDashboard() {
   const searchParams = useSearchParams();
   const [loadState, setLoadState] = useState<LoadState | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [formTarget, setFormTarget] = useState<TaskFormTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const filters = useMemo(
     () => taskQueryFromUrl(new URLSearchParams(searchParams.toString())),
     [searchParams],
   );
+  const requestKey = `${filters.queryString}:${retryCount}`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -271,6 +365,7 @@ export function TaskDashboard() {
       .then((result) => {
         setLoadState({
           query: filters.queryString,
+          requestKey,
           status: "success",
           tasks: result.data,
           total: result.meta.total,
@@ -281,6 +376,7 @@ export function TaskDashboard() {
 
         setLoadState({
           query: filters.queryString,
+          requestKey,
           status: "error",
           message:
             error instanceof Error ? error.message : "Tasks could not be loaded.",
@@ -288,7 +384,7 @@ export function TaskDashboard() {
       });
 
     return () => controller.abort();
-  }, [filters.queryString, retryCount]);
+  }, [filters.queryString, requestKey]);
 
   function updateUrl(updates: Record<string, string | null>) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -305,7 +401,7 @@ export function TaskDashboard() {
   }
 
   const settledState =
-    loadState !== null && loadState.query === filters.queryString
+    loadState !== null && loadState.requestKey === requestKey
       ? loadState
       : null;
   const visibleSuccess =
@@ -315,7 +411,7 @@ export function TaskDashboard() {
         ? loadState
         : null;
   const isRefreshing =
-    visibleSuccess !== null && visibleSuccess.query !== filters.queryString;
+    visibleSuccess !== null && visibleSuccess.requestKey !== requestKey;
   const hasFilters = filters.status !== "" || filters.priority !== "";
   const sortValue = `${filters.sortField}:${filters.sortOrder}`;
 
@@ -337,13 +433,22 @@ export function TaskDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl bg-indigo-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">
-                Root tasks
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
-                {visibleSuccess?.total ?? "—"}
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-indigo-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">
+                  Root tasks
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
+                  {visibleSuccess?.total ?? "—"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                onClick={() => setFormTarget({ mode: "create", parent: null })}
+              >
+                Create task
+              </button>
             </div>
           </div>
         </header>
@@ -469,7 +574,7 @@ export function TaskDashboard() {
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
               {hasFilters
                 ? "Change or clear the filters to see the rest of your work."
-                : "Your workspace is clear. Task creation will arrive in the next frontend step."}
+                : "Create the first task to start tracking your work."}
             </p>
             {hasFilters ? (
               <button
@@ -479,7 +584,15 @@ export function TaskDashboard() {
               >
                 Clear filters
               </button>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                className="mt-5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                onClick={() => setFormTarget({ mode: "create", parent: null })}
+              >
+                Create task
+              </button>
+            )}
           </section>
         ) : (
           <section
@@ -492,11 +605,50 @@ export function TaskDashboard() {
             aria-busy={isRefreshing}
           >
             {visibleSuccess.tasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onCreateSubtask={() =>
+                  setFormTarget({
+                    mode: "create",
+                    parent: { id: task.id, title: task.title },
+                  })
+                }
+                onEdit={(selectedTask) =>
+                  setFormTarget({ mode: "edit", task: selectedTask })
+                }
+                onDelete={setDeleteTarget}
+              />
             ))}
           </section>
         )}
       </div>
+      {formTarget ? (
+        <TaskFormDialog
+          key={
+            formTarget.mode === "edit"
+              ? `edit-${formTarget.task.id}`
+              : `create-${formTarget.parent?.id ?? "root"}`
+          }
+          target={formTarget}
+          onClose={() => setFormTarget(null)}
+          onSaved={() => {
+            setFormTarget(null);
+            setRetryCount((count) => count + 1);
+          }}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <DeleteTaskDialog
+          key={deleteTarget.id}
+          target={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            setRetryCount((count) => count + 1);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
