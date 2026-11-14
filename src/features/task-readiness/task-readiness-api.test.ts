@@ -29,6 +29,7 @@ const readyResponse = {
   meta: {
     clarificationRoundsUsed: 0,
     clarificationRoundsRemaining: 2,
+    clarificationLimitReached: false,
     execution: {
       modelTurns: 2,
       toolCalls: ["get_task_with_subtasks"],
@@ -65,19 +66,19 @@ describe("requestReadinessAnalysis", () => {
     );
   });
 
-  it("preserves safe server error codes", async () => {
+  it("preserves safe technical server error codes", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
             error: {
-              code: "CLARIFICATION_LIMIT_REACHED",
-              message: "More context is required.",
+              code: "AI_PROVIDER_UNAVAILABLE",
+              message: "Provider unavailable.",
               details: [],
             },
           }),
-          { status: 422 },
+          { status: 503 },
         ),
       ),
     );
@@ -85,8 +86,48 @@ describe("requestReadinessAnalysis", () => {
     await expect(
       requestReadinessAnalysis("task-1", { clarificationHistory: [] }),
     ).rejects.toMatchObject({
-      code: "CLARIFICATION_LIMIT_REACHED",
-      message: "More context is required.",
+      code: "AI_PROVIDER_UNAVAILABLE",
+      message: "Provider unavailable.",
+    });
+  });
+
+  it("parses the clarification limit as a successful terminal workflow state", async () => {
+    const terminalResponse = {
+      ...readyResponse,
+      data: {
+        outcome: "needs_clarification",
+        criteria: readyResponse.data.criteria,
+        explanation: "The deletion permission rule is still unresolved.",
+        dependencyVerification: readyResponse.data.dependencyVerification,
+        questions: [{ question: "Which roles may delete tasks?" }],
+      },
+      meta: {
+        ...readyResponse.meta,
+        clarificationRoundsUsed: 2,
+        clarificationRoundsRemaining: 0,
+        clarificationLimitReached: true,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(terminalResponse), { status: 200 }),
+      ),
+    );
+
+    await expect(
+      requestReadinessAnalysis("task-1", {
+        clarificationHistory: [
+          { items: [{ question: "Who?", answer: "Editors." }] },
+          { items: [{ question: "When?", answer: "Before deletion." }] },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        outcome: "needs_clarification",
+        questions: [{ question: "Which roles may delete tasks?" }],
+      },
+      meta: { clarificationLimitReached: true },
     });
   });
 

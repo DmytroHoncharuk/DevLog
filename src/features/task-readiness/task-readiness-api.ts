@@ -30,6 +30,7 @@ const analysisResponseSchema = z
       .object({
         clarificationRoundsUsed: z.number().int().min(0).max(2),
         clarificationRoundsRemaining: z.number().int().min(0).max(2),
+        clarificationLimitReached: z.boolean(),
         execution: z
           .object({
             modelTurns: z.number().int().min(1).max(4),
@@ -53,7 +54,24 @@ const analysisResponseSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const expectedLimitReached =
+      value.data.outcome === "needs_clarification" &&
+      value.meta.clarificationRoundsUsed === 2;
+
+    if (
+      value.meta.clarificationRoundsRemaining !==
+        2 - value.meta.clarificationRoundsUsed ||
+      value.meta.clarificationLimitReached !== expectedLimitReached
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["meta", "clarificationLimitReached"],
+        message: "Clarification metadata is inconsistent",
+      });
+    }
+  });
 
 const confirmationResponseSchema = z
   .object({ data: taskWithSubtasksResponseSchema })

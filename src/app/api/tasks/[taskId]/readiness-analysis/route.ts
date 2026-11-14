@@ -70,6 +70,7 @@ export async function POST(
       meta: {
         clarificationRoundsUsed: analysis.clarificationRoundsUsed,
         clarificationRoundsRemaining: analysis.clarificationRoundsRemaining,
+        clarificationLimitReached: analysis.clarificationLimitReached,
         execution: analysis.trace,
         snapshot: analysis.snapshot,
       },

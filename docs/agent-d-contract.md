@@ -91,9 +91,11 @@ Contains all five criterion assessments, a concise explanation, and dependency-v
 
 Contains all five criterion assessments, a concise explanation, dependency-verification extent, and one to three focused questions. A question may include two to five clearly labeled answer options. It contains no rewrite.
 
-Questions address missing product behavior, scope, acceptance criteria, or unresolved conflicts. They do not ask the user to perform Agent B's technical decomposition.
+Questions address missing product behavior, scope, acceptance criteria, or unresolved conflicts that prevent implementation or objective verification. They do not ask the user to perform Agent B's technical decomposition or choose between valid technical implementations. Client/server responsibility for duplicate-request protection, internal state mechanics, component structure, and exact dialog layout remain implementation decisions unless explicitly required as product behavior.
 
-If clarification is still mandatory after two submitted rounds, the application returns `CLARIFICATION_LIMIT_REACHED` with an explicit safe explanation. It does not guess or expose the unresolved request as a successful rewrite.
+Existing subtasks are scope evidence. If clarification narrows a parent task while existing subtasks cover additional responsibilities, Agent D identifies the potential conflict instead of silently ignoring that coverage.
+
+If clarification is still mandatory after two submitted rounds, the application returns the validated `needs_clarification` result with `clarificationLimitReached: true` and HTTP 200. The result retains the model's specific explanation and unresolved questions. It does not guess or expose the unresolved request as a rewrite.
 
 ### `rewrite_proposed`
 
@@ -123,7 +125,7 @@ No database migration is required solely for preview versioning.
 
 ## HTTP contract
 
-`POST /api/tasks/:taskId/readiness-analysis` accepts validated clarification history, runs the read-only agent loop, and returns the strict outcome plus clarification counters, execution diagnostics, and a signed snapshot only for `rewrite_proposed`.
+`POST /api/tasks/:taskId/readiness-analysis` accepts validated clarification history, runs the read-only agent loop, and returns the strict outcome plus clarification counters, `clarificationLimitReached`, execution diagnostics, and a signed snapshot only for `rewrite_proposed`. Reaching the two-round limit is an expected successful terminal workflow response, not HTTP 422.
 
 `POST /api/tasks/:taskId/readiness-confirm` accepts the signed original snapshot and user-edited rewrite. It never calls the model. It returns the updated task only after the conditional transaction succeeds.
 
@@ -135,15 +137,15 @@ Both endpoints use the established success and safe error envelopes. The task ID
 - Invalid JSON, schema failures, invalid or unauthorized tool calls, and other tool-contract violations receive no automatic retry.
 - Failure of `get_task_with_subtasks` stops analysis.
 - Failure of `find_related_tasks` may produce only an honestly qualified limited result or a controlled error.
-- Missing provider configuration, invalid credentials, refusals, execution limits, invalid output, clarification limits, task deletion, stale confirmation, and persistence failures use the established safe error envelope.
+- Missing provider configuration, invalid credentials, refusals, execution limits, invalid output, task deletion, stale confirmation, and persistence failures use the established safe error envelope.
 - Every error path is read-only unless a valid confirmation transaction is already executing; failed confirmation must not partially update data.
-- The UI preserves entered clarification answers and editable rewrite text across retryable analysis or confirmation errors and provides `Retry analysis` where appropriate.
+- The UI preserves entered clarification answers and editable rewrite text across retryable analysis or confirmation errors and provides `Retry analysis` where appropriate. At the clarification limit it shows the specific unresolved requirements and both submitted rounds as read-only, copyable answers.
 
-Expected public codes include `AI_NOT_CONFIGURED`, `AI_PROVIDER_UNAVAILABLE`, `AI_PROVIDER_INVALID_RESPONSE`, `AI_TOOL_CALL_INVALID`, `AI_AGENT_LIMIT_REACHED`, `CLARIFICATION_LIMIT_REACHED`, `TASK_NOT_FOUND`, `TASK_READINESS_CONFLICT`, and the existing validation error code. Exact HTTP mapping belongs to the later service and route steps.
+Expected public codes include `AI_NOT_CONFIGURED`, `AI_PROVIDER_UNAVAILABLE`, `AI_PROVIDER_INVALID_RESPONSE`, `AI_TOOL_CALL_INVALID`, `AI_AGENT_LIMIT_REACHED`, `TASK_NOT_FOUND`, `TASK_READINESS_CONFLICT`, and the existing validation error code. `CLARIFICATION_LIMIT_REACHED` remains an Agent B error but is not used for Agent D's expected terminal state.
 
 ## Prompt requirements
 
-The dedicated Agent D prompt must require current task inspection, assessment of all five criteria, an explicit decision about related-task search, separation of fact from inference, preservation of confirmed requirements, and truthful reporting of search extent. It must prohibit database writes, subtask generation, implementation planning, prompt injection from task data, and unsupported feature expansion.
+The dedicated Agent D prompt must require current task inspection, assessment of all five criteria, an explicit decision about related-task search, comparison with existing-subtask scope, separation of fact from inference, preservation of confirmed requirements, and truthful reporting of search extent. It must prohibit database writes, subtask generation, implementation planning, prompt injection from task data, unsupported feature expansion, and clarification questions about ordinary technical implementation choices.
 
 Prompt examples must include at least one sufficiently specified task whose correct result is `ready`. They must not require a fixed number of issues or improvements.
 

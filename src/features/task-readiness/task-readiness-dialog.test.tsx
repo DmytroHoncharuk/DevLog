@@ -56,6 +56,7 @@ function response(
     meta: {
       clarificationRoundsUsed: 0,
       clarificationRoundsRemaining: 2,
+      clarificationLimitReached: false,
       execution: {
         modelTurns: 2,
         toolCalls: ["get_task_with_subtasks"],
@@ -78,12 +79,17 @@ const ready = response({
   },
 });
 
-function clarification(question: string, roundsRemaining: number) {
+function clarification(
+  question: string,
+  roundsRemaining: number,
+  clarificationLimitReached = false,
+  explanation = "Search behavior is unclear.",
+) {
   return response(
     {
       outcome: "needs_clarification",
       criteria,
-      explanation: "Search behavior is unclear.",
+      explanation,
       dependencyVerification: {
         status: "not_performed",
         explanation: "Related tasks were not examined.",
@@ -93,6 +99,7 @@ function clarification(question: string, roundsRemaining: number) {
     {
       clarificationRoundsUsed: 2 - roundsRemaining,
       clarificationRoundsRemaining: roundsRemaining,
+      clarificationLimitReached,
     },
   );
 }
@@ -150,10 +157,12 @@ describe("TaskReadinessDialog", () => {
     vi.mocked(requestReadinessAnalysis)
       .mockResolvedValueOnce(clarification("Which matching rule?", 2))
       .mockResolvedValueOnce(clarification("Should matching ignore case?", 1))
-      .mockRejectedValueOnce(
-        new TaskReadinessApiError(
-          "Requirements remain unresolved.",
-          "CLARIFICATION_LIMIT_REACHED",
+      .mockResolvedValueOnce(
+        clarification(
+          "Which roles may delete tasks?",
+          0,
+          true,
+          "The deletion permission rule is still unresolved.",
         ),
       );
     const user = userEvent.setup();
@@ -175,6 +184,24 @@ describe("TaskReadinessDialog", () => {
     expect(
       await screen.findByText("Readiness remains unresolved"),
     ).toBeTruthy();
+    expect(
+      screen.getByText("The deletion permission rule is still unresolved."),
+    ).toBeTruthy();
+    expect(screen.getByText("Which roles may delete tasks?")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Update the task with the missing decisions, then start a new readiness check.",
+      ),
+    ).toBeTruthy();
+    const preservedAnswers = screen.getAllByRole("textbox").map(
+      (input) => (input as HTMLTextAreaElement).value,
+    );
+    expect(preservedAnswers).toEqual(["Substring matching", "Yes"]);
+    expect(
+      screen.getByRole("textbox", {
+        name: "Answer from round 1, question 1",
+      }),
+    ).toHaveProperty("readOnly", true);
     expect(requestReadinessAnalysis).toHaveBeenLastCalledWith(
       task.id,
       {

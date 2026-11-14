@@ -164,9 +164,16 @@ export function TaskReadinessDialog({
 
       if (response.data.outcome === "needs_clarification") {
         setQuestions(response.data.questions);
-        setAnswers(response.data.questions.map(() => ""));
         setAnswerErrors({});
         setSnapshot(null);
+
+        if (response.meta.clarificationLimitReached) {
+          setAnswers([]);
+          setPhase("terminal");
+          return;
+        }
+
+        setAnswers(response.data.questions.map(() => ""));
         setPhase("clarification");
         return;
       }
@@ -212,16 +219,8 @@ export function TaskReadinessDialog({
       } catch (error) {
         if (controller.signal.aborted) return;
 
-        if (
-          error instanceof TaskReadinessApiError &&
-          error.code === "CLARIFICATION_LIMIT_REACHED"
-        ) {
-          setApiError(error.message);
-          setPhase("terminal");
-        } else {
-          setApiError(safeErrorMessage(error));
-          if (initial) setPhase("error");
-        }
+        setApiError(safeErrorMessage(error));
+        if (initial) setPhase("error");
       } finally {
         if (activeRequest.current === controller) activeRequest.current = null;
         analysisPending.current = false;
@@ -554,14 +553,61 @@ export function TaskReadinessDialog({
         ) : null}
 
         {phase === "terminal" ? (
-          <section className="space-y-3 text-center">
-            <h3 className="text-lg font-bold text-slate-950">
-              Readiness remains unresolved
-            </h3>
-            <p className="text-sm leading-6 text-slate-600">
-              {apiError} Update the task with the missing decisions, then start a
-              new readiness check.
-            </p>
+          <section className="space-y-5">
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-slate-950">
+                Readiness remains unresolved
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {explanation}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Update the task with the missing decisions, then start a new
+                readiness check.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <h4 className="font-bold text-amber-950">
+                Requirements still unresolved
+              </h4>
+              <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-amber-900">
+                {questions.map((question) => (
+                  <li key={question.question}>{question.question}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-bold text-slate-900">
+                Your clarification answers
+              </h4>
+              {history.map((round, roundIndex) => (
+                <section
+                  key={roundIndex}
+                  className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                  aria-label={`Clarification round ${roundIndex + 1}`}
+                >
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                    Round {roundIndex + 1}
+                  </p>
+                  {round.items.map((item, itemIndex) => (
+                    <label
+                      key={`${item.question}-${itemIndex}`}
+                      className="block space-y-2 text-sm font-semibold text-slate-700"
+                    >
+                      <span>{item.question}</span>
+                      <textarea
+                        className="min-h-20 w-full resize-y rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 font-normal text-slate-800"
+                        value={item.answer}
+                        readOnly
+                        aria-label={`Answer from round ${roundIndex + 1}, question ${itemIndex + 1}`}
+                      />
+                    </label>
+                  ))}
+                </section>
+              ))}
+            </div>
           </section>
         ) : null}
 

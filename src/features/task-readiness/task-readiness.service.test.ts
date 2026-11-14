@@ -134,6 +134,7 @@ describe("TaskReadinessService.analyze", () => {
       },
       clarificationRoundsUsed: 0,
       clarificationRoundsRemaining: 2,
+      clarificationLimitReached: false,
       snapshot: null,
     });
     expect(access.getReadinessContext).toHaveBeenCalledWith(task.id);
@@ -235,21 +236,28 @@ describe("TaskReadinessService.analyze", () => {
     });
   });
 
-  it("passes validated clarification history and enforces two rounds", async () => {
+  it("returns a successful terminal clarification result after two rounds", async () => {
     const history = [
       { items: [{ question: "Behavior?", answer: "Substring search." }] },
       { items: [{ question: "Fields?", answer: "Titles only." }] },
     ];
     const clarificationOutput = output({
       outcome: "needs_clarification",
+      explanation: "Case-sensitivity requirements remain unresolved.",
       questions: [{ question: "Case sensitivity?" }],
     });
     const provider = createProvider(clarificationOutput);
     const service = new TaskReadinessService(provider, createAccess());
 
-    await expect(service.analyze(task.id, history)).rejects.toMatchObject({
-      status: 422,
-      code: "CLARIFICATION_LIMIT_REACHED",
+    await expect(service.analyze(task.id, history)).resolves.toMatchObject({
+      result: {
+        outcome: "needs_clarification",
+        explanation: "Case-sensitivity requirements remain unresolved.",
+        questions: [{ question: "Case sensitivity?" }],
+      },
+      clarificationRoundsUsed: 2,
+      clarificationRoundsRemaining: 0,
+      clarificationLimitReached: true,
     });
     expect(provider.generate).toHaveBeenCalledWith(
       { taskId: task.id, clarificationHistory: history },

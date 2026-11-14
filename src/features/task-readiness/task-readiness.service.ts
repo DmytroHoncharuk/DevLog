@@ -45,6 +45,7 @@ export type TaskReadinessAnalysis = {
   trace: TaskReadinessAgentTrace;
   clarificationRoundsUsed: number;
   clarificationRoundsRemaining: number;
+  clarificationLimitReached: boolean;
   snapshot: {
     original: { title: string; description: string };
     token: string;
@@ -198,16 +199,9 @@ export class TaskReadinessService {
       throw invalidProviderResult();
     }
 
-    if (
+    const clarificationLimitReached =
       result.outcome === "needs_clarification" &&
-      clarification.data.length >= MAX_READINESS_CLARIFICATION_ROUNDS
-    ) {
-      throw new ApiError(
-        422,
-        "CLARIFICATION_LIMIT_REACHED",
-        "Task readiness still has unresolved requirements after two clarification rounds",
-      );
-    }
+      clarification.data.length >= MAX_READINESS_CLARIFICATION_ROUNDS;
 
     const snapshot =
       result.outcome === "rewrite_proposed"
@@ -230,6 +224,7 @@ export class TaskReadinessService {
       clarificationRoundsUsed: clarification.data.length,
       clarificationRoundsRemaining:
         MAX_READINESS_CLARIFICATION_ROUNDS - clarification.data.length,
+      clarificationLimitReached,
       snapshot,
     };
   }
