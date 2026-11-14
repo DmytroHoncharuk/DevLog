@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { TaskDecompositionDialog } from "@/features/task-decomposition/task-decomposition-dialog";
+import { TaskReadinessDialog } from "@/features/task-readiness/task-readiness-dialog";
 
 import { fetchTasks } from "./task-api";
 import {
@@ -190,11 +191,13 @@ function TaskActions({
   onDelete,
   onAddSubtask,
   onDecompose,
+  onReadiness,
 }: {
   onEdit: () => void;
   onDelete: () => void;
   onAddSubtask?: () => void;
   onDecompose?: () => void;
+  onReadiness: () => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2" aria-label="Task actions">
@@ -207,6 +210,13 @@ function TaskActions({
           Break down with AI
         </button>
       ) : null}
+      <button
+        type="button"
+        className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 transition hover:bg-teal-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+        onClick={onReadiness}
+      >
+        Check readiness
+      </button>
       {onAddSubtask ? (
         <button
           type="button"
@@ -238,10 +248,12 @@ function Subtask({
   task,
   onEdit,
   onDelete,
+  onReadiness,
 }: {
   task: TaskResponse;
   onEdit: () => void;
   onDelete: () => void;
+  onReadiness: () => void;
 }) {
   return (
     <li className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
@@ -256,7 +268,11 @@ function Subtask({
         </div>
       </div>
       <div className="mt-4 border-t border-slate-200 pt-3">
-        <TaskActions onEdit={onEdit} onDelete={onDelete} />
+        <TaskActions
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onReadiness={onReadiness}
+        />
       </div>
     </li>
   );
@@ -266,12 +282,14 @@ function TaskCard({
   task,
   onCreateSubtask,
   onDecompose,
+  onReadiness,
   onEdit,
   onDelete,
 }: {
   task: TaskWithSubtasksResponse;
   onCreateSubtask: () => void;
   onDecompose: () => void;
+  onReadiness: (task: TaskResponse) => void;
   onEdit: (task: TaskResponse) => void;
   onDelete: (target: DeleteTarget) => void;
 }) {
@@ -299,6 +317,7 @@ function TaskCard({
           <TaskActions
             onAddSubtask={onCreateSubtask}
             onDecompose={onDecompose}
+            onReadiness={() => onReadiness(task)}
             onEdit={() => onEdit(task)}
             onDelete={() =>
               onDelete({
@@ -327,6 +346,7 @@ function TaskCard({
                   key={subtask.id}
                   task={subtask}
                   onEdit={() => onEdit(subtask)}
+                  onReadiness={() => onReadiness(subtask)}
                   onDelete={() =>
                     onDelete({
                       id: subtask.id,
@@ -370,6 +390,8 @@ export function TaskDashboard() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [decompositionTarget, setDecompositionTarget] =
     useState<TaskWithSubtasksResponse | null>(null);
+  const [readinessTarget, setReadinessTarget] =
+    useState<TaskResponse | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const filters = useMemo(
     () => taskQueryFromUrl(new URLSearchParams(searchParams.toString())),
@@ -647,6 +669,10 @@ export function TaskDashboard() {
                   setSuccessNotice(null);
                   setDecompositionTarget(task);
                 }}
+                onReadiness={(selectedTask) => {
+                  setSuccessNotice(null);
+                  setReadinessTarget(selectedTask);
+                }}
                 onCreateSubtask={() =>
                   setFormTarget({
                     mode: "create",
@@ -698,6 +724,18 @@ export function TaskDashboard() {
             setSuccessNotice(
               `Created ${count} ${count === 1 ? "subtask" : "subtasks"}.`,
             );
+            setRetryCount((current) => current + 1);
+          }}
+        />
+      ) : null}
+      {readinessTarget ? (
+        <TaskReadinessDialog
+          key={readinessTarget.id}
+          task={readinessTarget}
+          onClose={() => setReadinessTarget(null)}
+          onApplied={() => {
+            setReadinessTarget(null);
+            setSuccessNotice("Task requirements updated.");
             setRetryCount((current) => current + 1);
           }}
         />
