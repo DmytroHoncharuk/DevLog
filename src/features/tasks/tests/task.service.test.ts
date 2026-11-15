@@ -1,8 +1,8 @@
 import type { PrismaClient, Task } from "@/generated/prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import type { CreateTaskInput } from "./task.schemas";
-import { TaskService } from "./task.service";
+import type { CreateTaskInput } from "../task.schemas";
+import { TaskService } from "../task.service";
 
 const input: CreateTaskInput = {
   title: "Implement task creation",

@@ -4,7 +4,7 @@ import {
   confirmDecomposition,
   requestDecompositionPreview,
   TaskDecompositionApiError,
-} from "./task-decomposition-api";
+} from "../task-decomposition-api";
 
 const generatedSubtask = {
   title: "Implement the dialog",

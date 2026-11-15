@@ -1,8 +1,8 @@
 import type OpenAI from "openai";
 import { describe, expect, it, vi } from "vitest";
 
-import { OpenAITaskDecompositionProvider } from "./openai-task-decomposition.provider";
-import { TaskDecompositionProviderError } from "./task-decomposition.provider";
+import { OpenAITaskDecompositionProvider } from "../openai-task-decomposition.provider";
+import { TaskDecompositionProviderError } from "../task-decomposition.provider";
 
 const input = {
   sourceTask: {

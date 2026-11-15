@@ -4,7 +4,7 @@ import {
   MAX_READINESS_CLARIFICATION_ROUNDS,
   MAX_READINESS_MODEL_TURNS,
   MAX_READINESS_QUESTIONS,
-} from "./task-readiness.provider";
+} from "../task-readiness.provider";
 import {
   clarificationHistorySchema,
   findRelatedTasksArgumentsSchema,
@@ -13,7 +13,7 @@ import {
   readinessAnalysisRequestSchema,
   readinessConfirmationRequestSchema,
   taskReadinessResultSchema,
-} from "./task-readiness.schemas";
+} from "../task-readiness.schemas";
 
 const assessment = {
   status: "pass" as const,

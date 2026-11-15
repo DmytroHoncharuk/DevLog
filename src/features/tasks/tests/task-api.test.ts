@@ -4,7 +4,7 @@ import {
   createTask,
   deleteTask,
   updateTask,
-} from "./task-api";
+} from "../task-api";
 
 const task = {
   id: "task/id",

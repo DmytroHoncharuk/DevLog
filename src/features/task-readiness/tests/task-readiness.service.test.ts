@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   TaskReadinessProvider,
   TaskReadinessTools,
-} from "./task-readiness.provider";
+} from "../task-readiness.provider";
 import {
   TaskReadinessConfirmationService,
   TaskReadinessService,
   type TaskReadinessTaskAccess,
   type TaskReadinessTaskWriter,
-} from "./task-readiness.service";
-import type { TaskReadinessSnapshotManager } from "./task-readiness.snapshot";
+} from "../task-readiness.service";
+import type { TaskReadinessSnapshotManager } from "../task-readiness.snapshot";
 
 const task = {
   id: "task-1",

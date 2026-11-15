@@ -11,11 +11,11 @@ import {
   requestReadinessAnalysis,
   TaskReadinessApiError,
   type TaskReadinessAnalysisResponse,
-} from "./task-readiness-api";
-import { TaskReadinessDialog } from "./task-readiness-dialog";
+} from "../task-readiness-api";
+import { TaskReadinessDialog } from "../task-readiness-dialog";
 
 vi.mock("./task-readiness-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./task-readiness-api")>();
+  const actual = await importOriginal<typeof import("../task-readiness-api")>();
 
   return {
     ...actual,

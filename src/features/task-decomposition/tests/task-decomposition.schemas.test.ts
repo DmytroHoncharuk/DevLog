@@ -4,7 +4,7 @@ import {
   decompositionConfirmRequestSchema,
   decompositionPreviewRequestSchema,
   parseTaskDecompositionResult,
-} from "./task-decomposition.schemas";
+} from "../task-decomposition.schemas";
 
 const subtask = {
   title: "Define the API contract",

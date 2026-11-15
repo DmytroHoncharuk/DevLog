@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { taskReadinessSnapshotManager } from "./task-readiness.snapshot";
+import { taskReadinessSnapshotManager } from "../task-readiness.snapshot";
 
 const originalSecret = process.env.TASK_READINESS_SNAPSHOT_SECRET;
 

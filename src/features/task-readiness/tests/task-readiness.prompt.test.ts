@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTaskReadinessInput,
   TASK_READINESS_INSTRUCTIONS,
-} from "./task-readiness.prompt";
+} from "../task-readiness.prompt";
 
 describe("Task Readiness prompt", () => {
   it("requires inspection, five criteria, honest optional search, and ready", () => {

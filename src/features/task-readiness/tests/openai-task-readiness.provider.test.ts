@@ -1,8 +1,8 @@
 import type OpenAI from "openai";
 import { describe, expect, it, vi } from "vitest";
 
-import { OpenAITaskReadinessProvider } from "./openai-task-readiness.provider";
-import { TaskReadinessProviderError } from "./task-readiness.provider";
+import { OpenAITaskReadinessProvider } from "../openai-task-readiness.provider";
+import { TaskReadinessProviderError } from "../task-readiness.provider";
 
 const input = { taskId: "task-1", clarificationHistory: [] };
 const readyOutput = {

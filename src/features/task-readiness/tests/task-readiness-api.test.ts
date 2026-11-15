@@ -4,7 +4,7 @@ import {
   confirmReadinessRewrite,
   requestReadinessAnalysis,
   TaskReadinessApiError,
-} from "./task-readiness-api";
+} from "../task-readiness-api";
 
 const assessment = {
   status: "pass",

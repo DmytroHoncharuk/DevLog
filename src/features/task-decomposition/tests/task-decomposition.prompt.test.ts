@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TASK_DECOMPOSITION_INSTRUCTIONS } from "./task-decomposition.prompt";
+import { TASK_DECOMPOSITION_INSTRUCTIONS } from "../task-decomposition.prompt";
 
 describe("TASK_DECOMPOSITION_INSTRUCTIONS", () => {
   it("defines remaining-work and no-new-subtasks behavior without a target count", () => {

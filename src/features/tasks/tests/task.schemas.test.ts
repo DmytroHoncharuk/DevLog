@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createTaskSchema } from "./task.schemas";
+import { createTaskSchema } from "../task.schemas";
 
 const validTask = {
   title: "Implement task creation",

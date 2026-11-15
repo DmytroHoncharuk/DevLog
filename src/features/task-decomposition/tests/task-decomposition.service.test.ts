@@ -4,13 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type TaskDecompositionProvider,
   TaskDecompositionProviderError,
-} from "./task-decomposition.provider";
+} from "../task-decomposition.provider";
 import {
   TaskDecompositionConfirmationService,
   TaskDecompositionService,
   type TaskDecompositionTaskReader,
   type TaskDecompositionTaskWriter,
-} from "./task-decomposition.service";
+} from "../task-decomposition.service";
 
 const rootTask: Task = {
   id: "root-id",
