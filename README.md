@@ -15,7 +15,7 @@ DevLog is a local, single-user task tracker with nested subtasks and two AI-assi
 Clone the repository and install dependencies:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/DmytroHoncharuk/DevLog.git
 cd DevLog
 npm install
 ```
